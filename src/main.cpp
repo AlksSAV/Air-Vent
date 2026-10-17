@@ -12,6 +12,9 @@
 //   Select — вход/выход из редактирования
 //   Up     — увеличить выбранную уставку      Down — уменьшить
 //   Left   — выбрать параметр (t_min / t_max) Right — следующий экран
+//
+//   Up (обычный режим): двойное нажатие — включить принудительную
+//   вентиляцию, одинарное — выключить.
 // ---------------------------------------------------------------------------
 
 enum UIMode : uint8_t {
@@ -27,6 +30,8 @@ static void enter_edit() {
   s_mode = UI_EDIT;
   s_cursor = 0;
   s_edit_since_ms = millis();
+  // Нажатия, накопленные до входа, не должны «выстрелить» после выхода.
+  buttons_reset_clicks();
   display_invalidate();
 }
 
@@ -35,6 +40,7 @@ static void exit_edit() {
   // Уставки сохраняем только при выходе: иначе EEPROM трётся на каждом
   // шаге редактирования.
   settings_commit();
+  buttons_reset_clicks();
   display_invalidate();
 }
 
@@ -86,6 +92,10 @@ void loop() {
     if (buttons_pressed(BTN_SELECT)) enter_edit();
     if (buttons_pressed(BTN_RIGHT)) display_next_screen();
     if (buttons_pressed(BTN_LEFT)) display_next_screen();
+
+    // Принудительная вентиляция: двойное UP — включить, одинарное UP — выключить.
+    if (buttons_double_clicked(BTN_UP)) fan_force_start();
+    if (buttons_single_clicked(BTN_UP)) fan_force_stop();
   }
 
   sensors_update();
@@ -120,6 +130,7 @@ void loop() {
     Serial.print(in.absolute_humidity, 2);
     Serial.print(F(" | FAN "));
     Serial.print(fan.mode == FAN_RUNNING ? F("ON") :
+                 fan.mode == FAN_FORCE ? F("FORCE") :
                  fan.mode == FAN_COOLDOWN ? F("PAUSE") : F("OFF"));
     Serial.print(F(" block="));
     Serial.print((int)fan.block);

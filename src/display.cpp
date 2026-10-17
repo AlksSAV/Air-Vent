@@ -11,13 +11,17 @@ static bool s_force_redraw = true;
 // около 2 КБ flash. Дроби собираем целочисленной арифметикой: тот же вывод
 // заметно дешевле.
 static void fmt_1dp(char* dst, size_t size, float value, bool force_sign) {
-  bool negative = value < 0.0f;
-  float magnitude = negative ? -value : value;
+  float magnitude = value < 0.0f ? -value : value;
 
   // +0.5 — арифметическое округление к ближайшему десятую.
   long tenths = (long)(magnitude * 10.0f + 0.5f);
 
-  char sign = negative ? '-' : (force_sign ? '+' : ' ');
+  // Знак берём уже округлённого значения: -0,04 даёт нулевой tenths и должна
+  // печататься как "0.0", иначе у нуля появляется фантомный минус.
+  char sign = ' ';
+  if (tenths > 0) sign = value < 0.0f ? '-' : '+';
+  if (sign == '+' && !force_sign) sign = ' ';
+
   snprintf(dst, size, "%c%ld.%ld", sign, tenths / 10, tenths % 10);
 }
 
@@ -35,6 +39,7 @@ static void draw_line(LiquidCrystal& lcd, uint8_t row, const char* text) {
 // Короткая причина остановки вентилятора: экран 16 символов, поэтому
 // формулировки сжаты до кода состояния.
 static const char* block_text(FanStatus fan) {
+  if (fan.mode == FAN_FORCE) return "FORCE ON";
   if (fan.mode == FAN_RUNNING) return "FAN ON";
   if (fan.mode == FAN_COOLDOWN) return "PAUSE";
   switch (fan.block) {
@@ -48,6 +53,11 @@ static const char* block_text(FanStatus fan) {
 }
 
 void display_init(LiquidCrystal& lcd) {
+  // Подсветка LCD Keypad Shield сидит на D10: без явного HIGH экран рабочий,
+  // но тёмный.
+  pinMode(10, OUTPUT);
+  digitalWrite(10, HIGH);
+
   lcd.begin(16, 2);
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -73,8 +83,15 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
   s_last_draw_ms = now;
   s_force_redraw = false;
 
-  // Аварийный экран важнее любого содержательного: показываем его всегда.
+  // Принудительный режим и отказ датчика показываем вместе: вентилятор
+  // продолжает работать, и экран обязан это отражать, а не прятать за
+  // сообщением об ошибке. При исправных данных режим виден на экране статуса.
   if (!out.valid || !in.valid) {
+    if (fan.mode == FAN_FORCE) {
+      draw_line(lcd, 0, "FORCE ON");
+      draw_line(lcd, 1, "sensor error too");
+      return;
+    }
     draw_line(lcd, 0, "SENSOR ERROR");
     draw_line(lcd, 1, out.valid ? "check indoor" : "check outdoor");
     return;

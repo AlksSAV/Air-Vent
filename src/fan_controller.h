@@ -20,6 +20,7 @@ enum FanMode : uint8_t {
   FAN_IDLE = 0,
   FAN_RUNNING,
   FAN_COOLDOWN,
+  FAN_FORCE,  // ручное включение в обход алгоритма осушения
 };
 
 struct FanStatus {
@@ -32,6 +33,13 @@ void fan_init();
 
 // Пересчитывает состояние по актуальным данным датчиков.
 void fan_update(const SensorData& out, const SensorData& in);
+
+// Принудительная вентиляция: состояние переключается только вручную, оно
+// держит реле включённым в обход влажности, температурного коридора и лимита
+// непрерывной работы. Ограничения по времени нет — режим снимается кнопкой.
+void fan_force_start();
+void fan_force_stop();
+bool fan_force_active();
 
 FanStatus fan_status();
 

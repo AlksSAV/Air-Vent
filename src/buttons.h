@@ -22,4 +22,14 @@ Button buttons_current();
 // Фронт нажатия: true ровно один цикл после перехода в нажатое состояние.
 bool buttons_pressed(Button b);
 
+// События одинарного и двойного нажатия. Возвращают true ровно один раз
+// (сбрасываются при вызове). Срабатывают по факту подтверждения: одиночное —
+// через BUTTON_DOUBLE_CLICK_MS после первого нажатия, двойное — при втором
+// нажатии в пределах окна.
+bool buttons_single_clicked(Button b);
+bool buttons_double_clicked(Button b);
+
+// Сбросить накопленные события кликов (если кнопка не использовалась).
+void buttons_reset_clicks();
+
 #endif  // BUTTONS_H
