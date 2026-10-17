@@ -1,0 +1,129 @@
+#include <Arduino.h>
+#include <LiquidCrystal.h>
+#include "config.h"
+#include "sensors.h"
+#include "buttons.h"
+#include "settings.h"
+#include "fan_controller.h"
+#include "display.h"
+
+// ---------------------------------------------------------------------------
+// Интерфейс: обычный просмотр экранов и режим редактирования уставок.
+//   Select — вход/выход из редактирования
+//   Up     — увеличить выбранную уставку      Down — уменьшить
+//   Left   — выбрать параметр (t_min / t_max) Right — следующий экран
+// ---------------------------------------------------------------------------
+
+enum UIMode : uint8_t {
+  UI_NORMAL,
+  UI_EDIT,
+};
+
+static UIMode s_mode = UI_NORMAL;
+static uint8_t s_cursor = 0;  // 0 = t_min, 1 = t_max
+static unsigned long s_edit_since_ms = 0;
+
+static void enter_edit() {
+  s_mode = UI_EDIT;
+  s_cursor = 0;
+  s_edit_since_ms = millis();
+  display_invalidate();
+}
+
+static void exit_edit() {
+  s_mode = UI_NORMAL;
+  // Уставки сохраняем только при выходе: иначе EEPROM трётся на каждом
+  // шаге редактирования.
+  settings_commit();
+  display_invalidate();
+}
+
+// ---------------------------------------------------------------------------
+// Entry
+// ---------------------------------------------------------------------------
+
+static LiquidCrystal lcd(PIN_LCD_RS, PIN_LCD_EN, PIN_LCD_D4, PIN_LCD_D5,
+                         PIN_LCD_D6, PIN_LCD_D7);
+
+void setup() {
+  Serial.begin(115200);
+
+  sensors_init();
+  settings_init();
+  fan_init();
+  buttons_init();
+  display_init(lcd);
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  buttons_poll();
+
+  if (s_mode == UI_EDIT) {
+    // Бездействие размыкает редактирование, чтобы контроллер не остался
+    // «запертым» на экране уставок.
+    if ((now - s_edit_since_ms) >= EDIT_TIMEOUT_MS) {
+      exit_edit();
+    }
+
+    if (buttons_pressed(BTN_SELECT)) exit_edit();
+    if (buttons_pressed(BTN_LEFT)) {
+      s_cursor ^= 1;
+      display_invalidate();
+    }
+    if (buttons_pressed(BTN_UP)) {
+      if (s_cursor == 0) settings_adjust_t_min(+1);
+      else settings_adjust_t_max(+1);
+      display_invalidate();
+    }
+    if (buttons_pressed(BTN_DOWN)) {
+      if (s_cursor == 0) settings_adjust_t_min(-1);
+      else settings_adjust_t_max(-1);
+      display_invalidate();
+    }
+  } else {
+    if (buttons_pressed(BTN_SELECT)) enter_edit();
+    if (buttons_pressed(BTN_RIGHT)) display_next_screen();
+    if (buttons_pressed(BTN_LEFT)) display_next_screen();
+  }
+
+  sensors_update();
+  SensorData out = sensors_get_out();
+  SensorData in = sensors_get_in();
+  fan_update(out, in);
+
+  Settings st = settings_get();
+  FanStatus fan = fan_status();
+
+  if (s_mode == UI_EDIT) {
+    display_edit(lcd, st.t_min, st.t_max, s_cursor);
+  } else {
+    display_show(lcd, out, in, fan, st);
+  }
+
+  // Телеметрия для отладки: одно короткое сообщение раз в 5 с.
+  static unsigned long s_telemetry_ms = 0;
+  if ((now - s_telemetry_ms) >= SERIAL_LOG_PERIOD_MS) {
+    s_telemetry_ms = now;
+    Serial.print(F("OUT "));
+    Serial.print(out.temperature, 1);
+    Serial.print(F("C "));
+    Serial.print(out.humidity, 0);
+    Serial.print(F("% abs="));
+    Serial.print(out.absolute_humidity, 2);
+    Serial.print(F(" | IN "));
+    Serial.print(in.temperature, 1);
+    Serial.print(F("C "));
+    Serial.print(in.humidity, 0);
+    Serial.print(F("% abs="));
+    Serial.print(in.absolute_humidity, 2);
+    Serial.print(F(" | FAN "));
+    Serial.print(fan.mode == FAN_RUNNING ? F("ON") :
+                 fan.mode == FAN_COOLDOWN ? F("PAUSE") : F("OFF"));
+    Serial.print(F(" block="));
+    Serial.print((int)fan.block);
+    Serial.print(F(" rt="));
+    Serial.println(fan.runtime_s);
+  }
+}
