@@ -6,6 +6,7 @@
 #include "settings.h"
 #include "fan_controller.h"
 #include "display.h"
+#include "valve.h"
 
 // ---------------------------------------------------------------------------
 // Интерфейс: обычный просмотр экранов и режим редактирования уставок.
@@ -23,7 +24,7 @@ enum UIMode : uint8_t {
 };
 
 static UIMode s_mode = UI_NORMAL;
-static uint8_t s_cursor = 0;  // 0 = t_min, 1 = t_max
+static uint8_t s_cursor = 0;  // 0 = t_min, 1 = t_max, 2 = valve
 static unsigned long s_edit_since_ms = 0;
 
 static void enter_edit() {
@@ -75,17 +76,19 @@ void loop() {
 
     if (buttons_pressed(BTN_SELECT)) exit_edit();
     if (buttons_pressed(BTN_LEFT)) {
-      s_cursor ^= 1;
+      s_cursor = (s_cursor + 1) % 3;
       display_invalidate();
     }
     if (buttons_pressed(BTN_UP)) {
       if (s_cursor == 0) settings_adjust_t_min(+1);
-      else settings_adjust_t_max(+1);
+      else if (s_cursor == 1) settings_adjust_t_max(+1);
+      else settings_toggle_valve();
       display_invalidate();
     }
     if (buttons_pressed(BTN_DOWN)) {
       if (s_cursor == 0) settings_adjust_t_min(-1);
-      else settings_adjust_t_max(-1);
+      else if (s_cursor == 1) settings_adjust_t_max(-1);
+      else settings_toggle_valve();
       display_invalidate();
     }
   } else {
@@ -103,13 +106,17 @@ void loop() {
   SensorData in = sensors_get_in();
   SurfaceData floor = sensors_get_floor();
   BaroData baro = sensors_get_baro();
+
+  // Импульс привода снимается до обращения контроллера к положению заслонки:
+  // иначе он на один цикл увидит «в пути» там, где ход уже закончился.
+  valve_update();
   fan_update(out, in, floor);
 
   Settings st = settings_get();
   FanStatus fan = fan_status();
 
   if (s_mode == UI_EDIT) {
-    display_edit(lcd, st.t_min, st.t_max, s_cursor);
+    display_edit(lcd, st.t_min, st.t_max, st.valve_enabled, s_cursor);
   } else {
     display_show(lcd, out, in, floor, baro, fan, st);
   }

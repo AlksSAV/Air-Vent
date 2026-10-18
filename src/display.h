@@ -31,10 +31,10 @@ void display_next_screen();
 // Полный перерисов экрана (после выхода из меню).
 void display_invalidate();
 
-// Экран редактирования уставок: курсор 0 = t_min, 1 = t_max.
-// Рисуется сразу, без внутреннего таймера, — вызывается на каждое
+// Экран редактирования уставок: курсор 0 = t_min, 1 = t_max, 2 = привод
+// заслонки. Рисуется сразу, без внутреннего таймера, — вызывается на каждое
 // изменение из обработчика клавиш.
 void display_edit(LiquidCrystal& lcd, int16_t t_min, int16_t t_max,
-                  uint8_t cursor);
+                  bool valve_enabled, uint8_t cursor);
 
 #endif  // DISPLAY_H

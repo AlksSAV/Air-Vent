@@ -41,6 +41,7 @@ static void draw_line(LiquidCrystal& lcd, uint8_t row, const char* text) {
 static const char* block_text(FanStatus fan) {
   if (fan.mode == FAN_FORCE) return "FORCE ON";
   if (fan.mode == FAN_RUNNING) return "FAN ON";
+  if (fan.mode == FAN_OPENING) return "OPENING";
   if (fan.mode == FAN_COOLDOWN) return "PAUSE";
   switch (fan.block) {
     case BLOCK_SENSOR: return "OFF:SENS";
@@ -48,6 +49,7 @@ static const char* block_text(FanStatus fan) {
     case BLOCK_TEMP_HIGH: return "OFF:T-HI";
     case BLOCK_DEW: return "OFF:DEW";
     case BLOCK_DRY: return "OFF:DRY";
+    case BLOCK_VALVE: return "OFF:VALVE";
     default: return "OFF";
   }
 }
@@ -182,16 +184,23 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
   }
 }
 
+// Курсор переключается циклически по трём позициям: t_min, t_max, привод.
 void display_edit(LiquidCrystal& lcd, int16_t t_min, int16_t t_max,
-                  uint8_t cursor) {
+                  bool valve_enabled, uint8_t cursor) {
   char buf[20];
 
   // Активная позиция помечается ">" в начале строки: на 16 символах
   // мигающее подчёркивание читается хуже.
-  snprintf(buf, sizeof(buf), "%cTmin %+3d C", cursor == 0 ? '>' : ' ',
-           t_min);
+  snprintf(buf, sizeof(buf), "%cTmin %+3d C", cursor == 0 ? '>' : ' ', t_min);
   draw_line(lcd, 0, buf);
-  snprintf(buf, sizeof(buf), "%cTmax %+3d C", cursor == 1 ? '>' : ' ',
-           t_max);
+
+  if (cursor == 1) {
+    snprintf(buf, sizeof(buf), ">Tmax %+3d C", t_max);
+  } else if (cursor == 2) {
+    // Наличие привода заслонки — переключатель, а не число: шаг всегда один.
+    snprintf(buf, sizeof(buf), ">VALVE %s", valve_enabled ? "ON " : "OFF");
+  } else {
+    snprintf(buf, sizeof(buf), " Tmax %+3d C", t_max);
+  }
   draw_line(lcd, 1, buf);
 }

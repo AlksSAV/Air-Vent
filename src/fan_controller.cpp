@@ -2,6 +2,7 @@
 #include "settings.h"
 #include "config.h"
 #include "humidity.h"
+#include "valve.h"
 
 static FanStatus s_status;
 
@@ -46,15 +47,24 @@ void fan_init() {
   // вентилятор не дёрнется при прошивке и перезагрузке.
   relay(false);
 
+  valve_init();
+
   s_status.mode = FAN_IDLE;
   s_status.block = BLOCK_SENSOR;  // достоверных данных ещё нет
   s_status.runtime_s = settings_get().fan_runtime_s;
   s_status.surface_wet = false;
   s_run_start_ms = 0;
   s_credited_ms = millis();
+
+  // У привода заслонки нет пружинного возврата, поэтому после подачи питания
+  // положение захлопки неизвестно. Принудительно закрываем: концевик внутри
+  // привода сам разомкнёт цепь в крайнем положении.
+  valve_home();
 }
 
-// Остановка с указанием причины. Наработка фиксируется до смены режима.
+// Остановка с указанием причины. Наработка фиксируется до смены режима, а
+// канал притока закрывается: продолжать подавать уличный воздух в помещение,
+// которое мы перестали осушать, смысла нет.
 static void stop(FanBlock block) {
   unsigned long now = millis();
   if (relay_engaged(s_status.mode)) {
@@ -63,13 +73,21 @@ static void stop(FanBlock block) {
   s_status.mode = (block == BLOCK_COOLDOWN) ? FAN_COOLDOWN : FAN_IDLE;
   s_status.block = block;
   s_phase_start_ms = now;
+
+  // На время обязательной паузы канал остаётся открытым: закрытая и снова
+  // открытая заслонка стоила бы 24 секунды хода при том, что через 15 минут
+  // канал всё равно открыли бы. Закрываем только при настоящей остановке.
+  if (block != BLOCK_COOLDOWN) valve_close();
 }
 
+// Пуск: сначала открываем канал и только потом включаем вентилятор. Пока
+// захлопка в пути, реле вентилятора остаётся выключенным — иначе он гнал бы
+// воздух в закрытый канал.
 static void start(unsigned long now) {
-  s_status.mode = FAN_RUNNING;
-  s_status.block = BLOCK_NONE;
+  valve_open();
+  s_status.mode = FAN_OPENING;
+  s_status.block = BLOCK_VALVE;
   s_run_start_ms = now;
-  s_credited_ms = now;
   s_phase_start_ms = now;
 }
 
@@ -92,8 +110,10 @@ void fan_update(const SensorData& out, const SensorData& in,
 
   // Принудительный режим имеет безусловный приоритет: решение принял человек,
   // поэтому алгоритм осушения и все его ограничители (включая достоверность
-  // данных) откладываются, пока режим не снят кнопкой.
+  // данных) откладываются, пока режим не снят кнопкой. Заслонка при этом
+  // открывается: вентилятор должен иметь что гнать.
   if (s_force) {
+    if (valve_position() != VALVE_POS_OPEN) valve_open();
     s_status.mode = FAN_FORCE;
     s_status.block = BLOCK_NONE;
     credit_runtime(now);
@@ -122,6 +142,23 @@ void fan_update(const SensorData& out, const SensorData& in,
     s_status.block = BLOCK_NONE;
   }
 
+  // 3. Открытие канала. Пока захлопка в пути, вентилятор не включаем, а все
+  //    остальные проверки пропускаем: они будут пересчитаны в следующем
+  //    проходе, когда канал откроется.
+  if (s_status.mode == FAN_OPENING) {
+    if (valve_position() == VALVE_POS_MOVING) {
+      relay(false);
+      return;
+    }
+    // Импульс отработал, положение — открыто. Отсчёт лимита непрерывной
+    // работы ведём от реального пуска вентилятора, а не от подачи сигнала
+    // приводу, поэтому обнуляем точку отсчёта здесь.
+    s_status.mode = FAN_RUNNING;
+    s_status.block = BLOCK_NONE;
+    s_run_start_ms = now;
+    s_credited_ms = now;
+  }
+
   // Пока вентилятор включён, поддерживаем актуальные часы наработки.
   if (s_status.mode == FAN_RUNNING) {
     credit_runtime(now);
@@ -129,7 +166,7 @@ void fan_update(const SensorData& out, const SensorData& in,
 
   Settings st = settings_get();
 
-  // 3. Температурный коридор наружного воздуха.
+  // 4. Температурный коридор наружного воздуха.
   if (out.temperature < (float)st.t_min) {
     stop(BLOCK_TEMP_LOW);
     relay(false);
@@ -141,7 +178,7 @@ void fan_update(const SensorData& out, const SensorData& in,
     return;
   }
 
-  // 4. Защита от конденсата. Приточный воздух безопасен, пока его точка росы
+  // 5. Защита от конденсата. Приточный воздух безопасен, пока его точка росы
   //    не поднялась к температуре самой холодной конструкции. Пока датчик
   //    поверхности исправен, берается его реальное показание; иначе
   //    конструкции аппроксимируются внутренним воздухом минус запас.
@@ -152,7 +189,7 @@ void fan_update(const SensorData& out, const SensorData& in,
     return;
   }
 
-  // 5. Гистерезис по абсолютной влажности.
+  // 6. Гистерезис по абсолютной влажности.
   float diff = in.absolute_humidity - out.absolute_humidity;
 
   if (s_status.mode == FAN_RUNNING) {
@@ -163,7 +200,7 @@ void fan_update(const SensorData& out, const SensorData& in,
       relay(false);
       return;
     }
-    // Лимит непрерывной работы: защита от переохлаждения подвала.
+    // Лимит непрерывной работы: защита от переохлаждения помещения.
     if ((now - s_run_start_ms) >= FAN_RUN_MAX_MS) {
       stop(BLOCK_COOLDOWN);
       relay(false);
@@ -177,7 +214,7 @@ void fan_update(const SensorData& out, const SensorData& in,
   // оставляют контроллер в покое — это и есть зона нечувствительности.
   if (diff > ABS_HYST_ON) {
     start(now);
-    relay(true);
+    relay(false);
     return;
   }
 
@@ -197,6 +234,7 @@ void fan_force_start() {
   // Переход из штатной работы не должен потерять уже наработанные секунды.
   if (relay_engaged(s_status.mode)) credit_runtime(now);
 
+  valve_open();
   s_status.mode = FAN_FORCE;
   s_status.block = BLOCK_NONE;
   s_run_start_ms = now;

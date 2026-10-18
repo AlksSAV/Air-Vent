@@ -7,6 +7,7 @@
 struct Settings {
   int16_t t_min;  // нижний предел наружного воздуха, град
   int16_t t_max;  // верхний предел наружного воздуха, град
+  bool valve_enabled;  // есть ли в сборке привод заслонки
   uint32_t fan_runtime_s;  // накопленные секунды работы вентилятора
 };
 
@@ -19,6 +20,9 @@ Settings settings_get();
 // Возвращает true, если значение изменилось.
 bool settings_adjust_t_min(int8_t delta);
 bool settings_adjust_t_max(int8_t delta);
+
+// Переключает наличие привода заслонки.
+bool settings_toggle_valve();
 
 // Сохраняет пределы в EEPROM (вызывать при выходе из меню).
 void settings_commit();

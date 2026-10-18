@@ -38,11 +38,16 @@ void settings_init() {
     write_i16(EEPROM_TMIN_ADDR, T_OUT_DEFAULT_MIN);
     write_i16(EEPROM_TMAX_ADDR, T_OUT_DEFAULT_MAX);
     write_u32(EEPROM_RUNTIME_ADDR, 0);
+    EEPROM.update(EEPROM_VALVE_ADDR, 0);
   }
 
   s_settings.t_min = read_i16(EEPROM_TMIN_ADDR);
   s_settings.t_max = read_i16(EEPROM_TMAX_ADDR);
   s_settings.fan_runtime_s = read_u32(EEPROM_RUNTIME_ADDR);
+
+  // Привод заслонки — модуль необязательный: включается только явной настройкой,
+  // поэтому любое значение, кроме единицы, трактуется как "привода нет".
+  s_settings.valve_enabled = (EEPROM.read(EEPROM_VALVE_ADDR) == 1);
 
   // Повреждённые при выключании питания пределы не должны ломать логику.
   if (s_settings.t_min < T_LIMIT_MIN_ALLOWED || s_settings.t_min > T_LIMIT_MAX_ALLOWED ||
@@ -75,9 +80,15 @@ bool settings_adjust_t_max(int8_t delta) {
   return true;
 }
 
+bool settings_toggle_valve() {
+  s_settings.valve_enabled = !s_settings.valve_enabled;
+  return true;
+}
+
 void settings_commit() {
   write_i16(EEPROM_TMIN_ADDR, s_settings.t_min);
   write_i16(EEPROM_TMAX_ADDR, s_settings.t_max);
+  EEPROM.update(EEPROM_VALVE_ADDR, s_settings.valve_enabled ? 1 : 0);
 }
 
 void settings_add_runtime(uint32_t seconds) {
