@@ -12,6 +12,8 @@
 enum Screen : uint8_t {
   SCREEN_CLIMATE = 0,  // температура и относительная влажность
   SCREEN_ABS,          // абсолютная влажность и дельта
+  SCREEN_SURFACE,      // температура критической поверхности и роса на ней
+  SCREEN_BARO,         // давление и влагосодержание
   SCREEN_STATUS,       // состояние вентилятора, наработка, уставки
   SCREENS_COUNT
 };
@@ -20,7 +22,8 @@ void display_init(LiquidCrystal& lcd);
 
 // Обновляет обычный экран. Внутри держит таймер периода и текущий экран.
 void display_show(LiquidCrystal& lcd, const SensorData& out,
-                  const SensorData& in, FanStatus fan, const Settings& st);
+                  const SensorData& in, const SurfaceData& floor,
+                  const BaroData& baro, FanStatus fan, const Settings& st);
 
 // Переключить экран вручную.
 void display_next_screen();

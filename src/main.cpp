@@ -101,7 +101,9 @@ void loop() {
   sensors_update();
   SensorData out = sensors_get_out();
   SensorData in = sensors_get_in();
-  fan_update(out, in);
+  SurfaceData floor = sensors_get_floor();
+  BaroData baro = sensors_get_baro();
+  fan_update(out, in, floor);
 
   Settings st = settings_get();
   FanStatus fan = fan_status();
@@ -109,7 +111,7 @@ void loop() {
   if (s_mode == UI_EDIT) {
     display_edit(lcd, st.t_min, st.t_max, s_cursor);
   } else {
-    display_show(lcd, out, in, fan, st);
+    display_show(lcd, out, in, floor, baro, fan, st);
   }
 
   // Телеметрия для отладки: одно короткое сообщение раз в 5 с.
@@ -128,6 +130,24 @@ void loop() {
     Serial.print(in.humidity, 0);
     Serial.print(F("% abs="));
     Serial.print(in.absolute_humidity, 2);
+    Serial.print(F(" | FLOOR "));
+    if (floor.valid) {
+      Serial.print(floor.temperature, 1);
+      Serial.print(F("C wet="));
+      Serial.print(fan.surface_wet ? F("1") : F("0"));
+    } else {
+      Serial.print(F("--"));
+    }
+    Serial.print(F(" | BARO "));
+    if (baro.valid) {
+      Serial.print(baro.pressure_hpa, 1);
+    } else {
+      Serial.print(F("--"));
+    }
+    Serial.print(F(" | x out="));
+    Serial.print(out.mixing_ratio, 2);
+    Serial.print(F(" in="));
+    Serial.print(in.mixing_ratio, 2);
     Serial.print(F(" | FAN "));
     Serial.print(fan.mode == FAN_RUNNING ? F("ON") :
                  fan.mode == FAN_FORCE ? F("FORCE") :

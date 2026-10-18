@@ -49,6 +49,7 @@ void fan_init() {
   s_status.mode = FAN_IDLE;
   s_status.block = BLOCK_SENSOR;  // достоверных данных ещё нет
   s_status.runtime_s = settings_get().fan_runtime_s;
+  s_status.surface_wet = false;
   s_run_start_ms = 0;
   s_credited_ms = millis();
 }
@@ -72,8 +73,22 @@ static void start(unsigned long now) {
   s_phase_start_ms = now;
 }
 
-void fan_update(const SensorData& out, const SensorData& in) {
+void fan_update(const SensorData& out, const SensorData& in,
+                const SurfaceData& floor) {
   unsigned long now = millis();
+
+  // Датчик поверхности — единственный в схеме необязательный элемент: его
+  // отказ не должен останавливать осушение, поэтому для него отдельная
+  // проверка давности и собственный запас в проверке росы.
+  bool floor_ok = floor.valid && (now - floor.last_read_ms) < DATA_STALE_MS;
+  float t_crit = floor_ok ? floor.temperature : in.temperature - DEW_FALLBACK_C;
+
+  // Внутренний воздух насыщен относительно самой холодной поверхности — значит,
+  // вода на ней уже выпадает. Это диагноз текущей сырости, а не запрет: приток
+  // более сухого воздуха как раз и убирает причину, поэтому на решение о работе
+  // он не влияет.
+  s_status.surface_wet = floor_ok && in.valid &&
+                         dew_point(in.temperature, in.humidity) > floor.temperature;
 
   // Принудительный режим имеет безусловный приоритет: решение принял человек,
   // поэтому алгоритм осушения и все его ограничители (включая достоверность
@@ -127,10 +142,11 @@ void fan_update(const SensorData& out, const SensorData& in) {
   }
 
   // 4. Защита от конденсата. Приточный воздух безопасен, пока его точка росы
-  //    не поднялась к температуре конструкций. Конструкции принимаем равными
-  //    внутреннему воздуху — это худший случай для стен и пола подвала.
+  //    не поднялась к температуре самой холодной конструкции. Пока датчик
+  //    поверхности исправен, берается его реальное показание; иначе
+  //    конструкции аппроксимируются внутренним воздухом минус запас.
   float dew_out = dew_point(out.temperature, out.humidity);
-  if (dew_out > in.temperature - DEW_MARGIN_C) {
+  if (dew_out > t_crit - DEW_MARGIN_C) {
     stop(BLOCK_DEW);
     relay(false);
     return;

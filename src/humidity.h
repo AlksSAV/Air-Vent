@@ -12,4 +12,10 @@ float absolute_humidity(float temp_c, float rel_hum_pct);
 // конструкциях подвала.
 float dew_point(float temp_c, float rel_hum_pct);
 
+// Влагосодержание, г воды на кг сухого воздуха. В отличие от г/м3 сохраняется
+// при нагреве и охлаждении без фазового перехода, поэтому годится для баланса
+// влаги в потоке. Давление берётся реальным: на само x оно влияет до ±5 %,
+// но в разности внутреннего и наружного воздуха ошибка почти сокращается.
+float mixing_ratio(float temp_c, float rel_hum_pct, float pressure_hpa);
+
 #endif  // HUMIDITY_H

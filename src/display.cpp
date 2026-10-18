@@ -77,7 +77,8 @@ void display_next_screen() {
 void display_invalidate() { s_force_redraw = true; }
 
 void display_show(LiquidCrystal& lcd, const SensorData& out,
-                  const SensorData& in, FanStatus fan, const Settings& st) {
+                  const SensorData& in, const SurfaceData& floor,
+                  const BaroData& baro, FanStatus fan, const Settings& st) {
   unsigned long now = millis();
   if (!s_force_redraw && (now - s_last_draw_ms) < DISPLAY_PERIOD_MS) return;
   s_last_draw_ms = now;
@@ -126,6 +127,46 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
       snprintf(buf, sizeof(buf), "In %5s d%5s", v1, v2);
       draw_line(lcd, 1, buf);
       break;
+
+    case SCREEN_SURFACE: {
+      // Критическая поверхность: её реальная температура вместо аппроксимации
+      // "воздух минус запас" и есть то, на чём проверяется конденсат.
+      if (!floor.valid) {
+        draw_line(lcd, 0, "FLOOR SENSOR OFF");
+        draw_line(lcd, 1, "fallback: air-3C");
+        break;
+      }
+      fmt_1dp(v1, sizeof(v1), floor.temperature, false);
+      snprintf(buf, sizeof(buf), "FLR %6sC %s", v1,
+               fan.surface_wet ? "WET" : "DRY");
+      draw_line(lcd, 0, buf);
+      // Запас до росы на полу: положителен — сухо, отрицателен — идёт вода.
+      fmt_1dp(v1, sizeof(v1), dew_point(in.temperature, in.humidity), false);
+      fmt_1dp(v2, sizeof(v2), floor.temperature -
+                                   dew_point(in.temperature, in.humidity),
+              true);
+      snprintf(buf, sizeof(buf), "Td%6s d%6s", v1, v2);
+      draw_line(lcd, 1, buf);
+      break;
+    }
+
+    case SCREEN_BARO: {
+      // Влагосодержание (г/кг) сохраняется при нагреве и охлаждении, поэтому
+      // оно честнее показывает, насколько приток действительно суше. Само
+      // решение контроллер продолжает принимать по абсолютной влажности.
+      fmt_1dp(v1, sizeof(v1), out.mixing_ratio, false);
+      fmt_1dp(v2, sizeof(v2), in.mixing_ratio, false);
+      snprintf(buf, sizeof(buf), "Out%5s In%5s", v1, v2);
+      draw_line(lcd, 0, buf);
+
+      char p[6];
+      if (baro.valid) snprintf(p, sizeof(p), "%4ld", (long)(baro.pressure_hpa + 0.5f));
+      else snprintf(p, sizeof(p), "%4s", "----");
+      fmt_1dp(v2, sizeof(v2), in.mixing_ratio - out.mixing_ratio, true);
+      snprintf(buf, sizeof(buf), "P%s hPa d%5s", p, v2);
+      draw_line(lcd, 1, buf);
+      break;
+    }
 
     case SCREEN_STATUS:
     default: {

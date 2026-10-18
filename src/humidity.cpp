@@ -8,6 +8,10 @@ static const float MAGNUS_B = 243.04f;
 static const float SATURATION_HPA = 6.1094f;  // давление при 0 град, гПа
 static const float GAS_CONSTANT_WATER_VAPOR = 461.5f;  // Дж/(кг*К)
 
+// Отношение молярных масс воды и сухого воздуха, умноженное на 1000:
+// 0.62198 * 1000. Нужно для перевода отношения давлений в г/кг.
+static const float MIXING_RATIO_K = 622.0f;
+
 float absolute_humidity(float temp_c, float rel_hum_pct) {
   if (temp_c <= -273.15f) return 0.0f;
 
@@ -23,4 +27,18 @@ float dew_point(float temp_c, float rel_hum_pct) {
 
   float gamma = logf(rel_hum_pct / 100.0f) + MAGNUS_A * temp_c / (MAGNUS_B + temp_c);
   return MAGNUS_B * gamma / (MAGNUS_A - gamma);
+}
+
+float mixing_ratio(float temp_c, float rel_hum_pct, float pressure_hpa) {
+  if (rel_hum_pct < 0.0f || rel_hum_pct > 100.0f) return 0.0f;
+  if (temp_c <= -273.15f) return 0.0f;
+
+  float e_hpa = SATURATION_HPA * expf(MAGNUS_A * temp_c / (MAGNUS_B + temp_c));
+  e_hpa *= rel_hum_pct / 100.0f;
+
+  // Знаменатель обращается в ноль при давлении, равном давлению пара, — это
+  // за пределами физики, но делить на него всё равно нельзя.
+  if (pressure_hpa <= e_hpa) return 0.0f;
+
+  return MIXING_RATIO_K * e_hpa / (pressure_hpa - e_hpa);
 }
