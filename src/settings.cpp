@@ -17,6 +17,15 @@ static void write_i16(uint16_t addr, int16_t value) {
   EEPROM.update(addr + 1, (uint8_t)((uint16_t)value & 0xFF));
 }
 
+static uint16_t read_u16(uint16_t addr) {
+  return (uint16_t)(((uint16_t)EEPROM.read(addr) << 8) | EEPROM.read(addr + 1));
+}
+
+static void write_u16(uint16_t addr, uint16_t value) {
+  EEPROM.update(addr, (uint8_t)((uint16_t)value >> 8));
+  EEPROM.update(addr + 1, (uint8_t)((uint16_t)value & 0xFF));
+}
+
 static uint32_t read_u32(uint16_t addr) {
   uint32_t value = 0;
   for (uint8_t i = 0; i < 4; i++) {
@@ -39,6 +48,7 @@ void settings_init() {
     write_i16(EEPROM_TMAX_ADDR, T_OUT_DEFAULT_MAX);
     write_u32(EEPROM_RUNTIME_ADDR, 0);
     EEPROM.update(EEPROM_VALVE_ADDR, 0);
+    write_u16(EEPROM_VPULSE_ADDR, VALVE_PULSE_DEFAULT_S);
   }
 
   s_settings.t_min = read_i16(EEPROM_TMIN_ADDR);
@@ -48,6 +58,14 @@ void settings_init() {
   // Привод заслонки — модуль необязательный: включается только явной настройкой,
   // поэтому любое значение, кроме единицы, трактуется как "привода нет".
   s_settings.valve_enabled = (EEPROM.read(EEPROM_VALVE_ADDR) == 1);
+
+  // Длительность импульса привода — по умолчанию 12 сек.
+  s_settings.valve_pulse_s = read_u16(EEPROM_VPULSE_ADDR);
+  if (s_settings.valve_pulse_s < VALVE_PULSE_MIN_S ||
+      s_settings.valve_pulse_s > VALVE_PULSE_MAX_S) {
+    s_settings.valve_pulse_s = VALVE_PULSE_DEFAULT_S;
+    write_u16(EEPROM_VPULSE_ADDR, s_settings.valve_pulse_s);
+  }
 
   // Повреждённые при выключании питания пределы не должны ломать логику.
   if (s_settings.t_min < T_LIMIT_MIN_ALLOWED || s_settings.t_min > T_LIMIT_MAX_ALLOWED ||
@@ -85,10 +103,19 @@ bool settings_toggle_valve() {
   return true;
 }
 
+bool settings_adjust_valve_pulse(int8_t delta) {
+  int16_t next = (int16_t)s_settings.valve_pulse_s + delta * VALVE_PULSE_STEP_S;
+  next = constrain(next, (int16_t)VALVE_PULSE_MIN_S, (int16_t)VALVE_PULSE_MAX_S);
+  if (next == (int16_t)s_settings.valve_pulse_s) return false;
+  s_settings.valve_pulse_s = (uint16_t)next;
+  return true;
+}
+
 void settings_commit() {
   write_i16(EEPROM_TMIN_ADDR, s_settings.t_min);
   write_i16(EEPROM_TMAX_ADDR, s_settings.t_max);
   EEPROM.update(EEPROM_VALVE_ADDR, s_settings.valve_enabled ? 1 : 0);
+  write_u16(EEPROM_VPULSE_ADDR, s_settings.valve_pulse_s);
 }
 
 void settings_add_runtime(uint32_t seconds) {

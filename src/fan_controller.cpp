@@ -110,10 +110,24 @@ void fan_update(const SensorData& out, const SensorData& in,
 
   // Принудительный режим имеет безусловный приоритет: решение принял человек,
   // поэтому алгоритм осушения и все его ограничители (включая достоверность
-  // данных) откладываются, пока режим не снят кнопкой. Заслонка при этом
-  // открывается: вентилятор должен иметь что гнать.
+  // данных) откладываются, пока режим не снят кнопкой. Пока заслонка в пути,
+  // реле не подаётся — вентилятор должен иметь что гнать.
   if (s_force) {
-    if (valve_position() != VALVE_POS_OPEN) valve_open();
+    if (valve_position() == VALVE_POS_MOVING) {
+      s_status.mode = FAN_OPENING;
+      s_status.block = BLOCK_VALVE;
+      relay(false);
+      return;
+    }
+    if (valve_position() != VALVE_POS_OPEN) {
+      valve_open();
+      s_status.mode = FAN_OPENING;
+      s_status.block = BLOCK_VALVE;
+      s_run_start_ms = now;
+      s_credited_ms = now;
+      relay(false);
+      return;
+    }
     s_status.mode = FAN_FORCE;
     s_status.block = BLOCK_NONE;
     credit_runtime(now);
@@ -235,12 +249,12 @@ void fan_force_start() {
   if (relay_engaged(s_status.mode)) credit_runtime(now);
 
   valve_open();
-  s_status.mode = FAN_FORCE;
-  s_status.block = BLOCK_NONE;
+  s_status.mode = FAN_OPENING;
+  s_status.block = BLOCK_VALVE;
   s_run_start_ms = now;
   s_credited_ms = now;
   s_phase_start_ms = now;
-  relay(true);
+  relay(false);
 }
 
 void fan_force_stop() {

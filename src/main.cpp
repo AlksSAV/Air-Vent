@@ -24,7 +24,7 @@ enum UIMode : uint8_t {
 };
 
 static UIMode s_mode = UI_NORMAL;
-static uint8_t s_cursor = 0;  // 0 = t_min, 1 = t_max, 2 = valve
+static uint8_t s_cursor = 0;  // 0 = t_min, 1 = t_max, 2 = valve, 3 = valve_pulse
 static unsigned long s_edit_since_ms = 0;
 
 static void enter_edit() {
@@ -76,19 +76,21 @@ void loop() {
 
     if (buttons_pressed(BTN_SELECT)) exit_edit();
     if (buttons_pressed(BTN_LEFT)) {
-      s_cursor = (s_cursor + 1) % 3;
+      s_cursor = (s_cursor + 1) % 4;
       display_invalidate();
     }
     if (buttons_pressed(BTN_UP)) {
       if (s_cursor == 0) settings_adjust_t_min(+1);
       else if (s_cursor == 1) settings_adjust_t_max(+1);
-      else settings_toggle_valve();
+      else if (s_cursor == 2) settings_toggle_valve();
+      else settings_adjust_valve_pulse(+1);
       display_invalidate();
     }
     if (buttons_pressed(BTN_DOWN)) {
       if (s_cursor == 0) settings_adjust_t_min(-1);
       else if (s_cursor == 1) settings_adjust_t_max(-1);
-      else settings_toggle_valve();
+      else if (s_cursor == 2) settings_toggle_valve();
+      else settings_adjust_valve_pulse(-1);
       display_invalidate();
     }
   } else {
@@ -116,7 +118,8 @@ void loop() {
   FanStatus fan = fan_status();
 
   if (s_mode == UI_EDIT) {
-    display_edit(lcd, st.t_min, st.t_max, st.valve_enabled, s_cursor);
+    display_edit(lcd, st.t_min, st.t_max, st.valve_enabled,
+                 st.valve_pulse_s, s_cursor);
   } else {
     display_show(lcd, out, in, floor, baro, fan, st);
   }

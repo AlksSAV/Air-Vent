@@ -184,9 +184,10 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
   }
 }
 
-// Курсор переключается циклически по трём позициям: t_min, t_max, привод.
+// Курсор переключается циклически по четырём позициям: t_min, t_max, привод,
+// импульс привода.
 void display_edit(LiquidCrystal& lcd, int16_t t_min, int16_t t_max,
-                  bool valve_enabled, uint8_t cursor) {
+                  bool valve_enabled, uint16_t valve_pulse_s, uint8_t cursor) {
   char buf[20];
 
   // Активная позиция помечается ">" в начале строки: на 16 символах
@@ -199,6 +200,8 @@ void display_edit(LiquidCrystal& lcd, int16_t t_min, int16_t t_max,
   } else if (cursor == 2) {
     // Наличие привода заслонки — переключатель, а не число: шаг всегда один.
     snprintf(buf, sizeof(buf), ">VALVE %s", valve_enabled ? "ON " : "OFF");
+  } else if (cursor == 3) {
+    snprintf(buf, sizeof(buf), ">PULSE %2lu s", (unsigned long)valve_pulse_s);
   } else {
     snprintf(buf, sizeof(buf), " Tmax %+3d C", t_max);
   }

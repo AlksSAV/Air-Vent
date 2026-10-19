@@ -72,7 +72,11 @@ void valve_close() {
 void valve_update() {
   if (!s_moving) return;
 
-  if ((millis() - s_move_started_ms) < VALVE_PULSE_MS) return;
+  // Длительность импульса читается из настройки при каждом проходе: уставка
+  // меняется в меню без перезагрузки.
+  unsigned long pulse_ms =
+      (unsigned long)settings_get().valve_pulse_s * 1000UL;
+  if ((millis() - s_move_started_ms) < pulse_ms) return;
 
   s_moving = false;
   drive(false, false);
