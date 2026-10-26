@@ -26,12 +26,17 @@ static void fmt_1dp(char* dst, size_t size, float value, bool force_sign) {
 }
 
 // Все строки печатаются ровно по 16 символов с дополнением пробелами, иначе
-// от предыдущего экрана остаются «хвосты».
+// от предыдущего экрана остаются «хвосты». Копируем через memcpy: strncpy
+// добивает остаток нулями, и lcd.print() печатает короче строки экрана.
 static void draw_line(LiquidCrystal& lcd, uint8_t row, const char* text) {
   char line[17];
   memset(line, ' ', 16);
   line[16] = '\0';
-  strncpy(line, text, 16);
+
+  size_t len = strlen(text);
+  if (len > 16) len = 16;
+  memcpy(line, text, len);
+
   lcd.setCursor(0, row);
   lcd.print(line);
 }
@@ -185,25 +190,30 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
 }
 
 // Курсор переключается циклически по четырём позициям: t_min, t_max, привод,
-// импульс привода.
+// импульс привода. Две позиции на страницу: пределы температур и параметры
+// привода — так связанные величины видны вместе, а листание остаётся в пределах
+// одной клавиши Left.
 void display_edit(LiquidCrystal& lcd, int16_t t_min, int16_t t_max,
                   bool valve_enabled, uint16_t valve_pulse_s, uint8_t cursor) {
   char buf[20];
 
   // Активная позиция помечается ">" в начале строки: на 16 символах
-  // мигающее подчёркивание читается хуже.
-  snprintf(buf, sizeof(buf), "%cTmin %+3d C", cursor == 0 ? '>' : ' ', t_min);
-  draw_line(lcd, 0, buf);
-
-  if (cursor == 1) {
-    snprintf(buf, sizeof(buf), ">Tmax %+3d C", t_max);
-  } else if (cursor == 2) {
-    // Наличие привода заслонки — переключатель, а не число: шаг всегда один.
-    snprintf(buf, sizeof(buf), ">VALVE %s", valve_enabled ? "ON " : "OFF");
-  } else if (cursor == 3) {
-    snprintf(buf, sizeof(buf), ">PULSE %2lu s", (unsigned long)valve_pulse_s);
-  } else {
-    snprintf(buf, sizeof(buf), " Tmax %+3d C", t_max);
+  // мигающее подчёркивание читается хуже. Индикатор страницы стоит в правом
+  // нижнем углу, чтобы не сдвигать редактируемое число.
+  if (cursor < 2) {
+    snprintf(buf, sizeof(buf), "%cTmin %+3d C", cursor == 0 ? '>' : ' ', t_min);
+    draw_line(lcd, 0, buf);
+    snprintf(buf, sizeof(buf), "%cTmax %+3d C  1/2", cursor == 1 ? '>' : ' ',
+             t_max);
+    draw_line(lcd, 1, buf);
+    return;
   }
+
+  // Наличие привода заслонки — переключатель, а не число: шаг всегда один.
+  snprintf(buf, sizeof(buf), "%cVALVE %s", cursor == 2 ? '>' : ' ',
+           valve_enabled ? "ON" : "OFF");
+  draw_line(lcd, 0, buf);
+  snprintf(buf, sizeof(buf), "%cPULSE %2lu s  2/2", cursor == 3 ? '>' : ' ',
+           (unsigned long)valve_pulse_s);
   draw_line(lcd, 1, buf);
 }
