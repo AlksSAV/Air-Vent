@@ -7,6 +7,11 @@ static Screen s_screen = SCREEN_CLIMATE;
 static unsigned long s_last_draw_ms = 0;
 static bool s_force_redraw = true;
 
+// Подсветка гаснет по бездействию клавиш. Таймер отдельный от перерисовки:
+// экран продолжает обновляться, гаснет только подсветка.
+static unsigned long s_last_activity_ms = 0;
+static bool s_asleep = false;
+
 // avr-libc печатает float только при линковке с -u _printf_float, что стоит
 // около 2 КБ flash. Дроби собираем целочисленной арифметикой: тот же вывод
 // заметно дешевле.
@@ -59,6 +64,16 @@ static const char* block_text(FanStatus fan) {
   }
 }
 
+// Строка по центру 16-символьного экрана: draw_line всегда дополняет строку
+// пробелами справа, поэтому сдвиг делается префиксом.
+static void draw_centered(LiquidCrystal& lcd, uint8_t row, const char* text) {
+  char buf[20];
+  size_t len = strlen(text);
+  size_t pad = len < 16 ? (16 - len) / 2 : 0;
+  snprintf(buf, sizeof(buf), "%*s%s", (int)pad, "", text);
+  draw_line(lcd, row, buf);
+}
+
 void display_init(LiquidCrystal& lcd) {
   // Подсветка LCD Keypad Shield сидит на D10: без явного HIGH экран рабочий,
   // но тёмный.
@@ -67,12 +82,23 @@ void display_init(LiquidCrystal& lcd) {
 
   lcd.begin(16, 2);
   lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Air-Vent");
-  lcd.setCursor(0, 1);
-  lcd.print("drying control");
-  delay(1500);
+
+  // Заставка из двух кадров, по 2.5 с: название и версия. Пока она идёт,
+  // контроллер уже опрашивает датчики — первый опрос приходится на эти же
+  // секунды, поэтому после заставки экран сразу показывает данные.
+  draw_centered(lcd, 0, "Air-Vent");
+  draw_centered(lcd, 1, "drying control");
+  delay(2500);
+
   lcd.clear();
+  draw_centered(lcd, 0, "McKey");
+  draw_centered(lcd, 1, "v1.0 2026");
+  delay(2500);
+
+  lcd.clear();
+  // Отсчёт бездействия начинается после заставки: она и так занимает 5 с,
+  // и таймаут должен отсчитываться от момента, когда экран стал рабочим.
+  s_last_activity_ms = millis();
   s_force_redraw = true;
 }
 
@@ -81,12 +107,35 @@ void display_next_screen() {
   s_force_redraw = true;
 }
 
+// Любое нажатие продлевает подсветку. Подсветка — обычный цифровой выход
+// щита, поэтому включается простым digitalWrite.
+void display_wake() {
+  s_last_activity_ms = millis();
+  if (!s_asleep) return;
+  s_asleep = false;
+  digitalWrite(10, HIGH);
+  s_force_redraw = true;
+}
+
+bool display_is_asleep() { return s_asleep; }
+
+// Гасит подсветку по таймауту бездействия. Экран при этом не очищается:
+// показания остаются читаемыми при внешнем свете, а вернуть подсветку можно
+// любой клавишей.
+static void update_backlight(unsigned long now) {
+  if (s_asleep) return;
+  if ((now - s_last_activity_ms) < DISPLAY_BACKLIGHT_TIMEOUT_MS) return;
+  s_asleep = true;
+  digitalWrite(10, LOW);
+}
+
 void display_invalidate() { s_force_redraw = true; }
 
 void display_show(LiquidCrystal& lcd, const SensorData& out,
                   const SensorData& in, const SurfaceData& floor,
                   const BaroData& baro, FanStatus fan, const Settings& st) {
   unsigned long now = millis();
+  update_backlight(now);
   if (!s_force_redraw && (now - s_last_draw_ms) < DISPLAY_PERIOD_MS) return;
   s_last_draw_ms = now;
   s_force_redraw = false;
@@ -196,6 +245,11 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
 void display_edit(LiquidCrystal& lcd, int16_t t_min, int16_t t_max,
                   bool valve_enabled, uint16_t valve_pulse_s, uint8_t cursor) {
   char buf[20];
+
+  // В меню подсветка не гаснет: пользователь как раз смотрит на экран и
+  // щёлкает клавишами, а таймаут бездействия в меню свой (EDIT_TIMEOUT_MS).
+  s_last_activity_ms = millis();
+  update_backlight(s_last_activity_ms);
 
   // Активная позиция помечается ">" в начале строки: на 16 символах
   // мигающее подчёркивание читается хуже. Индикатор страницы стоит в правом

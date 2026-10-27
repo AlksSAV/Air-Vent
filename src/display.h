@@ -28,6 +28,13 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
 // Переключить экран вручную.
 void display_next_screen();
 
+// Продлить подсветку и вернуть экран после ручного нажатия: бездействие
+// гасит подсветку через DISPLAY_BACKLIGHT_TIMEOUT_MS.
+void display_wake();
+
+// Погашена ли подсветка по таймауту бездействия.
+bool display_is_asleep();
+
 // Полный перерисов экрана (после выхода из меню).
 void display_invalidate();
 
