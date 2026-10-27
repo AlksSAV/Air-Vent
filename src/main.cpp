@@ -52,13 +52,31 @@ static LiquidCrystal lcd(PIN_LCD_RS, PIN_LCD_EN, PIN_LCD_D4, PIN_LCD_D5,
                          PIN_LCD_D6, PIN_LCD_D7);
 
 void setup() {
+  // Дисплей инициализируется первым: пока поднимаются датчики, LCD уже
+  // показывает заставку. Иначе экран остаётся тёмным и с мусором всё время,
+  // что занимает sensors_init().
+  display_init(lcd);
+
   Serial.begin(115200);
 
   sensors_init();
   settings_init();
   fan_init();
   buttons_init();
-  display_init(lcd);
+
+  // Заставка держится не фиксированное время, а до первого годного опроса:
+  // DHT22 отвечает только через SENSOR_FIRST_READ_MS после подачи питания, и
+  // без ожидания первым, что видит человек, оказывается SENSOR ERROR.
+  unsigned long boot_ms = millis();
+  while ((millis() - boot_ms) < BOOT_SPLASH_MS) {
+    sensors_update();
+    SensorData out = sensors_get_out();
+    SensorData in = sensors_get_in();
+    if (out.valid && in.valid) break;
+    delay(50);
+  }
+
+  display_boot_done();
 }
 
 void loop() {

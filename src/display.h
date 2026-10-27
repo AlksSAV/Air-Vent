@@ -21,6 +21,10 @@ enum Screen : uint8_t {
 
 void display_init(LiquidCrystal& lcd);
 
+// Убрать заставку и вернуть обычный экран. Вызывается, когда первый опрос
+// датчиков уже прошёл: иначе человек видит SENSOR ERROR вместо показаний.
+void display_boot_done();
+
 // Обновляет обычный экран. Внутри держит таймер периода и текущий экран.
 void display_show(LiquidCrystal& lcd, const SensorData& out,
                   const SensorData& in, const SurfaceData& floor,

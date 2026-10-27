@@ -68,16 +68,6 @@ static const char* block_text(FanStatus fan) {
   }
 }
 
-// Строка по центру 16-символьного экрана: draw_line всегда дополняет строку
-// пробелами справа, поэтому сдвиг делается префиксом.
-static void draw_centered(LiquidCrystal& lcd, uint8_t row, const char* text) {
-  char buf[20];
-  size_t len = strlen(text);
-  size_t pad = len < 16 ? (16 - len) / 2 : 0;
-  snprintf(buf, sizeof(buf), "%*s%s", (int)pad, "", text);
-  draw_line(lcd, row, buf);
-}
-
 // δ (разность) и φ (относительная влажность) в штатном CGROM HD44780
 // отсутствуют, поэтому рисуются вручную в CGRAM. ρ (0xE6) и ° (0xDF) там есть
 // — их слоты не занимаем.
@@ -105,31 +95,20 @@ void display_init(LiquidCrystal& lcd) {
 
   lcd.clear();
   // HD44780 выполняет `clear()` асинхронно — команда занимает 1.64 мс.
-  // `draw_centered`, начатый сразу, стирает текст до того, как экран
+  // `draw_line`, вызванный сразу, стирает текст до того, как экран
   // отчистится, поэтому задержка обязательна.
   delay(5);
 
-  // Заставка из двух кадров, по 2 с: название и версия. Пока она идёт,
-  // контроллер уже опрашивает датчики — первый опрос приходится на эти же
-  // секунды, поэтому после заставки экран сразу показывает данные.
-  draw_centered(lcd, 0, "Air-Vent");
-  draw_centered(lcd, 1, "drying control");
-  delay(2000);
+  // Заставка: две строки без центрирования. Паузу держит main: пока идёт
+  // заставка, там же опрашиваются датчики, иначе первым, что видит человек
+  // после неё, оказывается SENSOR ERROR.
+  draw_line(lcd, 0, "Air-Vent");
+  draw_line(lcd, 1, "McKey 2026");
+}
 
-  lcd.clear();
-  delay(5);
-  // Версия берётся из VERSION: захардкоженная строка разъехалась бы с ней
-  // при первом обновлении прошивки.
-  char ver[12];
-  snprintf(ver, sizeof(ver), "v%s", VERSION);
-  draw_centered(lcd, 0, "McKey");
-  draw_centered(lcd, 1, ver);
-  delay(2000);
-
-  lcd.clear();
-  delay(5);
-  // Отсчёт бездействия начинается после заставки: она и так занимает 4 с,
-  // и таймаут должен отсчитываться от момента, когда экран стал рабочим.
+void display_boot_done() {
+  // Отсчёт бездействия начинается от момента, когда экран стал рабочим:
+  // заставка не должна съедать таймаут подсветки.
   s_last_activity_ms = millis();
   s_force_redraw = true;
 }
@@ -306,7 +285,7 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
       // Точка росы притока: именно к ней сравнивается температура пола, когда
       // решается, пускать ли вентилятор (OFF:DEW).
       fmt_1dp(v1, sizeof(v1), dew_point(out.temperature, out.humidity), false);
-      snprintf(buf, sizeof(buf), "Td out%6s\xDF" "C", v1);
+      snprintf(buf, sizeof(buf), "Tdew out%6s\xDF" "C", v1);
       draw_line(lcd, 1, buf);
       break;
     }
