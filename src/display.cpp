@@ -78,6 +78,15 @@ static void draw_centered(LiquidCrystal& lcd, uint8_t row, const char* text) {
   draw_line(lcd, row, buf);
 }
 
+// δ (разность) и φ (относительная влажность) в штатном CGROM HD44780
+// отсутствуют, поэтому рисуются вручную в CGRAM. ρ (0xE6) и ° (0xDF) там есть
+// — их слоты не занимаем.
+// Слот 0 не используем: его код — 0x00, что обрывает C-строку в snprintf.
+static byte CHAR_DELTA[8] = {0x04, 0x04, 0x0A, 0x0A, 0x11, 0x11, 0x1F, 0x00};
+static byte CHAR_PHI[8] = {0x04, 0x0E, 0x15, 0x15, 0x15, 0x0E, 0x04, 0x00};
+#define CG_DELTA 1
+#define CG_PHI 2
+
 void display_init(LiquidCrystal& lcd) {
   // Подсветка LCD Keypad Shield сидит на D10: без явного HIGH экран рабочий,
   // но тёмный.
@@ -90,6 +99,9 @@ void display_init(LiquidCrystal& lcd) {
   // дисплея выполняется внутреннюю инициализацию. Команда `clear()`,
   // отправленная сразу, теряется — экран остаётся пустым.
   delay(100);
+
+  lcd.createChar(CG_DELTA, CHAR_DELTA);
+  lcd.createChar(CG_PHI, CHAR_PHI);
 
   lcd.clear();
   // HD44780 выполняет `clear()` асинхронно — команда занимает 1.64 мс.
@@ -187,27 +199,28 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
 
   switch (s_screen) {
     case SCREEN_CLIMATE:
+      // "\xC2\xB0" не годится: HD44780 берёт знак град из собственного CGROM
+      // по байту 0xDF (223).
       fmt_1dp(v1, sizeof(v1), out.temperature, false);
       fmt_1dp(v2, sizeof(v2), in.temperature, false);
-      snprintf(buf, sizeof(buf), "OUT%6sC %2ld%%", v1,
+      snprintf(buf, sizeof(buf), "OUT%5s\xDF" "C %c %2ld%%", v1, CG_PHI,
                (long)out.humidity);
       draw_line(lcd, 0, buf);
       fmt_1dp(v1, sizeof(v1), in.temperature, false);
-      snprintf(buf, sizeof(buf), "IN %6sC %2ld%%", v1, (long)in.humidity);
+      snprintf(buf, sizeof(buf), "IN %5s\xDF" "C %c %2ld%%", v1, CG_PHI,
+               (long)in.humidity);
       draw_line(lcd, 1, buf);
       break;
 
     case SCREEN_ABS:
-      // Абсолютная влажность и точка росы притока — те величины, по которым
-      // контроллер принимает решение.
+      // Абсолютная влажность — экран решения.
+      // "\xE6" (230) — ρ из штатного CGROM HD44780: обозначение абсолютной
+      // влажности.
       fmt_1dp(v1, sizeof(v1), out.absolute_humidity, false);
-      fmt_1dp(v2, sizeof(v2), dew_point(out.temperature, out.humidity), false);
-      snprintf(buf, sizeof(buf), "Out%5s Td%5s", v1, v2);
+      snprintf(buf, sizeof(buf), "Out \xE6=%5s g/m3", v1);
       draw_line(lcd, 0, buf);
       fmt_1dp(v1, sizeof(v1), in.absolute_humidity, false);
-      fmt_1dp(v2, sizeof(v2), in.absolute_humidity - out.absolute_humidity,
-              true);
-      snprintf(buf, sizeof(buf), "In %5s d%5s", v1, v2);
+      snprintf(buf, sizeof(buf), "In  \xE6=%5s g/m3", v1);
       draw_line(lcd, 1, buf);
       break;
 
@@ -220,15 +233,13 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
         break;
       }
       fmt_1dp(v1, sizeof(v1), floor.temperature, false);
-      snprintf(buf, sizeof(buf), "FLR %6sC %s", v1,
+      snprintf(buf, sizeof(buf), "FLR %6s\xDF" "C %s", v1,
                fan.surface_wet ? "WET" : "DRY");
       draw_line(lcd, 0, buf);
-      // Запас до росы на полу: положителен — сухо, отрицателен — идёт вода.
+      // Точка росы внутреннего воздуха. "Tdew" — 4 символа, поэтому поле
+      // значения начинается в той же колонке, что и температура пола.
       fmt_1dp(v1, sizeof(v1), dew_point(in.temperature, in.humidity), false);
-      fmt_1dp(v2, sizeof(v2), floor.temperature -
-                                   dew_point(in.temperature, in.humidity),
-              true);
-      snprintf(buf, sizeof(buf), "Td%6s d%6s", v1, v2);
+      snprintf(buf, sizeof(buf), "Tdew%6s\xDF" "C", v1);
       draw_line(lcd, 1, buf);
       break;
     }
@@ -238,15 +249,34 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
       // оно честнее показывает, насколько приток действительно суше. Само
       // решение контроллер продолжает принимать по абсолютной влажности.
       fmt_1dp(v1, sizeof(v1), out.mixing_ratio, false);
-      fmt_1dp(v2, sizeof(v2), in.mixing_ratio, false);
-      snprintf(buf, sizeof(buf), "Out%5s In%5s", v1, v2);
+      snprintf(buf, sizeof(buf), "Out x=%5s g/kg", v1);
       draw_line(lcd, 0, buf);
 
+      fmt_1dp(v1, sizeof(v1), in.mixing_ratio, false);
+      snprintf(buf, sizeof(buf), "In  x=%5s g/kg", v1);
+      draw_line(lcd, 1, buf);
+      break;
+    }
+
+    case SCREEN_DELTA: {
+      // Справочные разности: δA — разница абсолютной влажности (внутри минус
+      // снаружи), г/м³; δT — запас поверхности до точки росы, °C.
+      // CGRAM-слот 7: пользовательский значок «треугольник с чертой».
       char p[6];
       if (baro.valid) snprintf(p, sizeof(p), "%4ld", (long)(baro.pressure_hpa + 0.5f));
       else snprintf(p, sizeof(p), "%4s", "----");
-      fmt_1dp(v2, sizeof(v2), in.mixing_ratio - out.mixing_ratio, true);
-      snprintf(buf, sizeof(buf), "P%s hPa d%5s", p, v2);
+      snprintf(buf, sizeof(buf), "P=%5s hPa", p);
+      draw_line(lcd, 0, buf);
+
+      fmt_1dp(v1, sizeof(v1), in.absolute_humidity - out.absolute_humidity, true);
+      // Без датчика пола запас до росы не измерить: рисуем прочерк вместо числа.
+      if (floor.valid) {
+        fmt_1dp(v2, sizeof(v2), floor.temperature -
+                                     dew_point(in.temperature, in.humidity), true);
+      } else {
+        snprintf(v2, sizeof(v2), "----");
+      }
+      snprintf(buf, sizeof(buf), "%cA%5s %cT%5s", CG_DELTA, v1, CG_DELTA, v2);
       draw_line(lcd, 1, buf);
       break;
     }
@@ -258,7 +288,10 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
       snprintf(buf, sizeof(buf), "%-8s%3luh%02lu", block_text(fan),
                (unsigned long)hours, (unsigned long)minutes);
       draw_line(lcd, 0, buf);
-      snprintf(buf, sizeof(buf), "Tmin%+3d Tmax%+3d", st.t_min, st.t_max);
+      // Точка росы притока: именно к ней сравнивается температура пола, когда
+      // решается, пускать ли вентилятор (OFF:DEW).
+      fmt_1dp(v1, sizeof(v1), dew_point(out.temperature, out.humidity), false);
+      snprintf(buf, sizeof(buf), "Td out%6s\xDF" "C", v1);
       draw_line(lcd, 1, buf);
       break;
     }
