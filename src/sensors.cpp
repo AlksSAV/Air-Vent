@@ -163,6 +163,16 @@ static void update_baro(unsigned long now) {
   bool plausible = isfinite(pressure_hpa) && pressure_hpa >= BARO_MIN_HPA &&
                    pressure_hpa <= BARO_MAX_HPA;
 
+  // Диапазон сам по себе пропускает одиночные сбои шины: испорченное чтение
+  // может попасть внутрь физических границ и перекосить влагосодержание обоих
+  // потоков. Поэтому подтверждённое значение не должно прыгать относительно
+  // предыдущего — погода так быстро не меняется.
+  if (plausible && s_baro.valid) {
+    float jump = pressure_hpa - s_baro.pressure_hpa;
+    if (jump < 0.0f) jump = -jump;
+    if (jump > BARO_MAX_JUMP_HPA) plausible = false;
+  }
+
   if (!plausible) {
     if (s_errors_baro < SENSOR_MAX_ERRORS) s_errors_baro++;
     s_baro.valid = false;
