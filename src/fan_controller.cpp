@@ -21,7 +21,9 @@ static unsigned long s_credited_ms = 0;
 static bool s_force = false;
 
 // Переключение реле: единственный place, где меняется состояние выхода.
-static void relay(bool on) { digitalWrite(PIN_FAN, on ? HIGH : LOW); }
+static void relay(bool on) {
+  digitalWrite(PIN_FAN, on ? FAN_RELAY_ACTIVE_LEVEL : !FAN_RELAY_ACTIVE_LEVEL);
+}
 
 // В принудительном режиме реле включено так же, как при штатной работе,
 // поэтому наработка и её фиксация перед остановом для них общие.
@@ -77,7 +79,12 @@ static void stop(FanBlock block) {
   // На время обязательной паузы канал остаётся открытым: закрытая и снова
   // открытая заслонка стоила бы 24 секунды хода при том, что через 15 минут
   // канал всё равно открыли бы. Закрываем только при настоящей остановке.
-  if (block != BLOCK_COOLDOWN) valve_close();
+  // Повторная остановка в том же состоянии (например, BLOCK_SENSOR пересчитывается
+  // каждый проход loop) не должна перезапускать импульс: заслонка уже закрыта —
+  // оставляем её в покое, иначе реле закрытия пульсирует без конца.
+  if (block != BLOCK_COOLDOWN && valve_position() != VALVE_POS_CLOSED) {
+    valve_close();
+  }
 }
 
 // Пуск: сначала открываем канал и только потом включаем вентилятор. Пока
@@ -261,9 +268,13 @@ void fan_force_stop() {
   if (!s_force) return;
   s_force = false;
 
-  // Причина — NONE: дальше решение снова за алгоритмом, он пересчитается
-  // в этом же цикле loop().
-  stop(BLOCK_NONE);
+  // Останавливаем вентилятор, но не закрываем клапан — он был открыт для
+  // принудительного режима. Вызов stop(BLOCK_NONE) привёл бы к valve_close()
+  // и одновременному замыканию OPEN+CLOSE на короткое время.
+  unsigned long now = millis();
+  if (relay_engaged(s_status.mode)) credit_runtime(now);
+  s_status.mode = FAN_IDLE;
+  s_status.block = BLOCK_NONE;
   relay(false);
 }
 

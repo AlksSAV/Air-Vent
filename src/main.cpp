@@ -165,6 +165,13 @@ void loop() {
     Serial.print(F(" block="));
     Serial.print((int)fan.block);
     Serial.print(F(" rt="));
-    Serial.println(fan.runtime_s);
+    Serial.print(fan.runtime_s);
+    // Логические уровни выходов: F — вентилятор (1=вкл), V — состояние
+    // привода (0=moving, 1=closed, 2=open), чтобы не путать с физическими
+    // уровнями пина: SSR вентилятора HIGH, реле привода — LOW (GND-trigger).
+    Serial.print(F(" F="));
+    Serial.print(fan_is_on());
+    Serial.print(F(" V="));
+    Serial.println((int)valve_position());
   }
 }

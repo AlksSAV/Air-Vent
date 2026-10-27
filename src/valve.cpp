@@ -2,14 +2,17 @@
 #include "config.h"
 #include "settings.h"
 
-// Реле включаются активным высоким уровнем, как и реле вентилятора.
+// Реле привода — GND-trigger (VALVE_RELAY_ACTIVE_LEVEL=LOW), реле вентилятора —
+// HIGH; выводим логическое «включено» в физический уровень в одном месте.
 static void drive(bool open_on, bool close_on) {
   // Взаимная блокировка: одновременно обе фазы поданы быть не могут, иначе
   // замкнём обмотку мотора между двумя концевиками.
   if (open_on && close_on) return;
 
-  digitalWrite(PIN_VALVE_OPEN, open_on ? HIGH : LOW);
-  digitalWrite(PIN_VALVE_CLOSE, close_on ? HIGH : LOW);
+  digitalWrite(PIN_VALVE_OPEN,
+               open_on ? VALVE_RELAY_ACTIVE_LEVEL : !VALVE_RELAY_ACTIVE_LEVEL);
+  digitalWrite(PIN_VALVE_CLOSE,
+               close_on ? VALVE_RELAY_ACTIVE_LEVEL : !VALVE_RELAY_ACTIVE_LEVEL);
 }
 
 // Идёт ли сейчас импульс, в какую сторону и когда он начался. Концевик внутри
