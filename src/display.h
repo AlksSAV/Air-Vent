@@ -38,9 +38,12 @@ bool display_is_asleep();
 // Полный перерисов экрана (после выхода из меню).
 void display_invalidate();
 
-// Курсор переключается циклически по четырём позициям: t_min, t_max, привод,
-// импульс привода.
+// Курсор переключается циклически по пяти позициям: t_min, t_max, привод,
+// импульс привода и сброс наработки. Пределы температур и параметры привода
+// разнесены по страницам, чтобы связанные величины были видны вместе, а
+// листание оставалось в пределах одной клавиши Left.
 void display_edit(LiquidCrystal& lcd, int16_t t_min, int16_t t_max,
-                  bool valve_enabled, uint16_t valve_pulse_s, uint8_t cursor);
+                  bool valve_enabled, uint16_t valve_pulse_s,
+                  bool reset_runtime, uint8_t cursor);
 
 #endif  // DISPLAY_H

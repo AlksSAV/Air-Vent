@@ -268,14 +268,24 @@ void fan_force_stop() {
   if (!s_force) return;
   s_force = false;
 
-  // Останавливаем вентилятор, но не закрываем клапан — он был открыт для
-  // принудительного режима. Вызов stop(BLOCK_NONE) привёл бы к valve_close()
-  // и одновременному замыканию OPEN+CLOSE на короткое время.
-  unsigned long now = millis();
-  if (relay_engaged(s_status.mode)) credit_runtime(now);
-  s_status.mode = FAN_IDLE;
-  s_status.block = BLOCK_NONE;
+  // Причина — NONE: дальнейшее решение снова за алгоритмом, он пересчитает
+  // его в этом же цикле loop().
+  //
+  // stop() обязана закрыть канал: при остановленном вентиляторе открытый
+  // приток — это оседание конденсата на решётке. Повторного импульса здесь не
+  // возникает: вызов однократный, а drive() в valve.cpp блокирует подачу обеих
+  // фаз, так что OPEN+CLOSE одновременно не замкнутся.
+  stop(BLOCK_NONE);
   relay(false);
 }
 
 bool fan_force_active() { return s_force; }
+
+void fan_runtime_reset() {
+  // Секунды, накопленные с прошлого credit_runtime, сбрасывать не нужно:
+  // settings_reset_runtime() обнуляет и их. Точку отсчёта переносим на сейчас,
+  // иначе следующее начисление добавило бы к нулю уже зачтённое время.
+  settings_reset_runtime();
+  s_credited_ms = millis();
+  s_status.runtime_s = 0;
+}

@@ -118,6 +118,16 @@ void settings_commit() {
   write_u16(EEPROM_VPULSE_ADDR, s_settings.valve_pulse_s);
 }
 
+void settings_reset_runtime() {
+  s_settings.fan_runtime_s = 0;
+  // Счётчик несохранённых секунд обнуляется вместе с наработкой: иначе
+  // ближайший часовой срез запишет в EEPROM уже сброшенное значение повторно,
+  // а следующий цикл работы начнёт отсчёт от старой точки.
+  s_runtime_dirty_s = 0;
+  s_last_runtime_save_ms = millis();
+  write_u32(EEPROM_RUNTIME_ADDR, 0);
+}
+
 void settings_add_runtime(uint32_t seconds) {
   if (seconds == 0) return;
 

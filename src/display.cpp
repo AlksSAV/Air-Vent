@@ -85,22 +85,34 @@ void display_init(LiquidCrystal& lcd) {
   digitalWrite(10, HIGH);
 
   lcd.begin(16, 2);
-  lcd.clear();
 
-  // Заставка из двух кадров, по 2.5 с: название и версия. Пока она идёт,
+  // HD44780 после `begin` ещё не готов принимать команды: контроллер
+  // дисплея выполняется внутреннюю инициализацию. Команда `clear()`,
+  // отправленная сразу, теряется — экран остаётся пустым.
+  delay(100);
+
+  lcd.clear();
+  // HD44780 выполняет `clear()` асинхронно — команда занимает 1.64 мс.
+  // `draw_centered`, начатый сразу, стирает текст до того, как экран
+  // отчистится, поэтому задержка обязательна.
+  delay(5);
+
+  // Заставка из двух кадров, по 2 с: название и версия. Пока она идёт,
   // контроллер уже опрашивает датчики — первый опрос приходится на эти же
   // секунды, поэтому после заставки экран сразу показывает данные.
   draw_centered(lcd, 0, "Air-Vent");
   draw_centered(lcd, 1, "drying control");
-  delay(2500);
+  delay(2000);
 
   lcd.clear();
+  delay(5);
   draw_centered(lcd, 0, "McKey");
   draw_centered(lcd, 1, "v1.0 2026");
-  delay(2500);
+  delay(2000);
 
   lcd.clear();
-  // Отсчёт бездействия начинается после заставки: она и так занимает 5 с,
+  delay(5);
+  // Отсчёт бездействия начинается после заставки: она и так занимает 4 с,
   // и таймаут должен отсчитываться от момента, когда экран стал рабочим.
   s_last_activity_ms = millis();
   s_force_redraw = true;
@@ -253,12 +265,14 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
   }
 }
 
-// Курсор переключается циклически по четырём позициям: t_min, t_max, привод,
-// импульс привода. Две позиции на страницу: пределы температур и параметры
-// привода — так связанные величины видны вместе, а листание остаётся в пределах
-// одной клавиши Left.
+// Курсор переключается циклически по пяти позициям: t_min, t_max, привод,
+// импульс привода и сброс наработки. Первые две страницы несут по две позиции
+// (пределы температур и параметры привода), третья — одна: сброс наработки,
+// единственное в меню действие вместо уставки, поэтому ему нужна отдельная
+// страница и явное подтверждение.
 void display_edit(LiquidCrystal& lcd, int16_t t_min, int16_t t_max,
-                  bool valve_enabled, uint16_t valve_pulse_s, uint8_t cursor) {
+                  bool valve_enabled, uint16_t valve_pulse_s,
+                  bool reset_runtime, uint8_t cursor) {
   char buf[20];
 
   // В меню подсветка не гаснет: пользователь как раз смотрит на экран и
@@ -272,17 +286,27 @@ void display_edit(LiquidCrystal& lcd, int16_t t_min, int16_t t_max,
   if (cursor < 2) {
     snprintf(buf, sizeof(buf), "%cTmin %+3d C", cursor == 0 ? '>' : ' ', t_min);
     draw_line(lcd, 0, buf);
-    snprintf(buf, sizeof(buf), "%cTmax %+3d C  1/2", cursor == 1 ? '>' : ' ',
+    snprintf(buf, sizeof(buf), "%cTmax %+3d C  1/3", cursor == 1 ? '>' : ' ',
              t_max);
     draw_line(lcd, 1, buf);
     return;
   }
 
-  // Наличие привода заслонки — переключатель, а не число: шаг всегда один.
-  snprintf(buf, sizeof(buf), "%cVALVE %s", cursor == 2 ? '>' : ' ',
-           valve_enabled ? "ON" : "OFF");
+  if (cursor < 4) {
+    // Наличие привода заслонки — переключатель, а не число: шаг всегда один.
+    snprintf(buf, sizeof(buf), "%cVALVE %s", cursor == 2 ? '>' : ' ',
+             valve_enabled ? "ON" : "OFF");
+    draw_line(lcd, 0, buf);
+    snprintf(buf, sizeof(buf), "%cPULSE %2lu s  2/3", cursor == 3 ? '>' : ' ',
+             (unsigned long)valve_pulse_s);
+    draw_line(lcd, 1, buf);
+    return;
+  }
+
+  // Сброс наработки. Up выставляет yes, Down — no; применяется только по
+  // Select, чтобы случайный уход из меню по таймауту не обнулил счётчик.
+  snprintf(buf, sizeof(buf), "%cRESET RT   %s", cursor == 4 ? '>' : ' ',
+           reset_runtime ? "yes" : "no");
   draw_line(lcd, 0, buf);
-  snprintf(buf, sizeof(buf), "%cPULSE %2lu s  2/2", cursor == 3 ? '>' : ' ',
-           (unsigned long)valve_pulse_s);
-  draw_line(lcd, 1, buf);
+  draw_line(lcd, 1, " Select=OK   3/3");
 }
