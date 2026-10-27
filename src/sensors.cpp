@@ -70,12 +70,17 @@ void sensors_init() {
   floor_sensor.setWaitForConversion(false);
   floor_sensor.setResolution(12);
 
-  // Отсчитываем период от старта, чтобы первое чтение не случилось сразу
-  // после подачи питания: DHT22 нужна секунда на прогрев.
-  s_out.last_read_ms = millis();
-  s_in.last_read_ms = millis();
-  s_floor.last_read_ms = millis();
-  s_baro.last_read_ms = millis();
+  // Первое чтение — через SENSOR_FIRST_READ_MS, а не через полный период:
+  // DHT22 нужна секунда на прогрев после подачи питания, но держать экран в
+  // SENSOR ERROR целую минуту незачем. Дальше период отсчитывается штатно.
+  // Разность считается в беззнаковой арифметике, поэтому заведомо «старая»
+  // отметка времени корректно даёт срабатывание через SENSOR_FIRST_READ_MS.
+  unsigned long now = millis();
+  s_out.last_read_ms = now - (SENSOR_PERIOD_MS - SENSOR_FIRST_READ_MS);
+  s_in.last_read_ms = s_out.last_read_ms;
+  // Полу тоже нечего ждать две минуты: конверсия стартует сразу после прогрева.
+  s_floor.last_read_ms = now - (FLOOR_PERIOD_MS - SENSOR_FIRST_READ_MS);
+  s_baro.last_read_ms = s_out.last_read_ms;
   s_baro.pressure_hpa = AMBIENT_HPA;
 }
 
