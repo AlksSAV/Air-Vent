@@ -6,13 +6,19 @@
 #include "settings.h"
 #include "fan_controller.h"
 #include "display.h"
+#include "menu.h"
 #include "valve.h"
 
 // ---------------------------------------------------------------------------
-// Интерфейс: обычный просмотр экранов и режим редактирования уставок.
-//   Select — вход/выход из редактирования
-//   Up     — увеличить выбранную уставку      Down — уменьшить
-//   Left   — выбрать параметр (t_min / t_max) Right — следующий экран
+// Интерфейс: обычный просмотр экранов и меню настроек.
+//   Left / Right   — следующий экран
+//   Select удержать— войти в меню настроек
+//
+// Внутри меню:
+//   Up / Down      — перемещение по пунктам
+//   Left / Right   — изменение значения
+//   Select коротко — войти в раздел / выйти на уровень выше
+//   Select удержать— назад, на пункте RESET RT — сброс наработки
 //
 //   Up (обычный режим): двойное нажатие — включить принудительную
 //   вентиляцию, одинарное — выключить.
@@ -20,34 +26,19 @@
 
 enum UIMode : uint8_t {
   UI_NORMAL,
-  UI_EDIT,
+  UI_MENU,
 };
 
 static UIMode s_mode = UI_NORMAL;
-static uint8_t s_cursor = 0;  // 0 = t_min, 1 = t_max, 2 = valve, 3 = pulse, 4 = reset
-static unsigned long s_edit_since_ms = 0;
 
-// Сброс наработки — единственное в меню действие вместо уставки. Запрос
-// копится в этом флаге и применяется только по Select на своей позиции:
-// выход по таймауту бездействия не должен обнулять счётчик.
-static bool s_reset_runtime = false;
-
-static void enter_edit() {
-  s_mode = UI_EDIT;
-  s_cursor = 0;
-  s_reset_runtime = false;
-  s_edit_since_ms = millis();
-  // Нажатия, накопленные до входа, не должны «выстрелить» после выхода.
-  buttons_reset_clicks();
+static void enter_menu() {
+  s_mode = UI_MENU;
+  menu_open();
   display_invalidate();
 }
 
-static void exit_edit(bool apply_reset) {
+static void exit_menu() {
   s_mode = UI_NORMAL;
-  // Уставки сохраняем только при выходе: иначе EEPROM трётся на каждом
-  // шаге редактирования.
-  if (apply_reset) fan_runtime_reset();
-  s_reset_runtime = false;
   settings_commit();
   buttons_reset_clicks();
   display_invalidate();
@@ -79,39 +70,12 @@ void loop() {
   // не должен требовать «особого» нажатия, первое же и есть пробуждение.
   if (buttons_current() != BTN_NONE) display_wake();
 
-  if (s_mode == UI_EDIT) {
-    // Бездействие размыкает редактирование, чтобы контроллер не остался
-    // «запертым» на экране уставок.
-    if ((now - s_edit_since_ms) >= EDIT_TIMEOUT_MS) {
-      exit_edit(false);
-    }
-
-    // Сброс наработки выполняется только явным Select на своей позиции:
-    // Up/Down лишь выставляют подтверждение, иначе одно неверное нажатие
-    // стоило бы счётчика, который вёлся месяцами.
-    if (buttons_pressed(BTN_SELECT)) exit_edit(s_cursor == 4 && s_reset_runtime);
-    if (buttons_pressed(BTN_LEFT)) {
-      s_cursor = (s_cursor + 1) % 5;
-      display_invalidate();
-    }
-    if (buttons_pressed(BTN_UP)) {
-      if (s_cursor == 0) settings_adjust_t_min(+1);
-      else if (s_cursor == 1) settings_adjust_t_max(+1);
-      else if (s_cursor == 2) settings_toggle_valve();
-      else if (s_cursor == 3) settings_adjust_valve_pulse(+1);
-      else s_reset_runtime = true;
-      display_invalidate();
-    }
-    if (buttons_pressed(BTN_DOWN)) {
-      if (s_cursor == 0) settings_adjust_t_min(-1);
-      else if (s_cursor == 1) settings_adjust_t_max(-1);
-      else if (s_cursor == 2) settings_toggle_valve();
-      else if (s_cursor == 3) settings_adjust_valve_pulse(-1);
-      else s_reset_runtime = false;
-      display_invalidate();
-    }
+  if (s_mode == UI_MENU) {
+    if (!menu_update()) exit_menu();
   } else {
-    if (buttons_pressed(BTN_SELECT)) enter_edit();
+    // Вход в настройки — только удержанием: короткое нажатие на обычных
+    // экранах ничего не делает, чтобы случайно не открыть меню.
+    if (buttons_held(BTN_SELECT, BUTTON_HOLD_MS)) enter_menu();
     if (buttons_pressed(BTN_RIGHT)) display_next_screen();
     if (buttons_pressed(BTN_LEFT)) display_next_screen();
 
@@ -134,9 +98,8 @@ void loop() {
   Settings st = settings_get();
   FanStatus fan = fan_status();
 
-  if (s_mode == UI_EDIT) {
-    display_edit(lcd, st.t_min, st.t_max, st.valve_enabled,
-                 st.valve_pulse_s, s_reset_runtime, s_cursor);
+  if (s_mode == UI_MENU) {
+    menu_draw(lcd);
   } else {
     display_show(lcd, out, in, floor, baro, fan, st);
   }

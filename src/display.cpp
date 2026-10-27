@@ -118,8 +118,12 @@ void display_init(LiquidCrystal& lcd) {
 
   lcd.clear();
   delay(5);
+  // Версия берётся из VERSION: захардкоженная строка разъехалась бы с ней
+  // при первом обновлении прошивки.
+  char ver[12];
+  snprintf(ver, sizeof(ver), "v%s", VERSION);
   draw_centered(lcd, 0, "McKey");
-  draw_centered(lcd, 1, "v1.0 2026");
+  draw_centered(lcd, 1, ver);
   delay(2000);
 
   lcd.clear();
@@ -136,6 +140,15 @@ void display_next_screen() {
   s_force_redraw = true;
 }
 
+// Гасит подсветку по таймауту бездействия. Экран при этом не очищается:
+// показания остаются читаемыми при внешнем свете, а вернуть подсветку можно
+// любой клавишей.
+static void update_backlight(unsigned long now);
+
+void display_text(LiquidCrystal& lcd, uint8_t row, const char* text) {
+  draw_line(lcd, row, text);
+}
+
 // Любое нажатие продлевает подсветку. Подсветка — обычный цифровой выход
 // щита, поэтому включается простым digitalWrite.
 void display_wake() {
@@ -146,11 +159,13 @@ void display_wake() {
   s_force_redraw = true;
 }
 
+void display_keep_awake() {
+  s_last_activity_ms = millis();
+  update_backlight(s_last_activity_ms);
+}
+
 bool display_is_asleep() { return s_asleep; }
 
-// Гасит подсветку по таймауту бездействия. Экран при этом не очищается:
-// показания остаются читаемыми при внешнем свете, а вернуть подсветку можно
-// любой клавишей.
 static void update_backlight(unsigned long now) {
   if (s_asleep) return;
   if ((now - s_last_activity_ms) < DISPLAY_BACKLIGHT_TIMEOUT_MS) return;
@@ -296,50 +311,4 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
       break;
     }
   }
-}
-
-// Курсор переключается циклически по пяти позициям: t_min, t_max, привод,
-// импульс привода и сброс наработки. Первые две страницы несут по две позиции
-// (пределы температур и параметры привода), третья — одна: сброс наработки,
-// единственное в меню действие вместо уставки, поэтому ему нужна отдельная
-// страница и явное подтверждение.
-void display_edit(LiquidCrystal& lcd, int16_t t_min, int16_t t_max,
-                  bool valve_enabled, uint16_t valve_pulse_s,
-                  bool reset_runtime, uint8_t cursor) {
-  char buf[20];
-
-  // В меню подсветка не гаснет: пользователь как раз смотрит на экран и
-  // щёлкает клавишами, а таймаут бездействия в меню свой (EDIT_TIMEOUT_MS).
-  s_last_activity_ms = millis();
-  update_backlight(s_last_activity_ms);
-
-  // Активная позиция помечается ">" в начале строки: на 16 символах
-  // мигающее подчёркивание читается хуже. Индикатор страницы стоит в правом
-  // нижнем углу, чтобы не сдвигать редактируемое число.
-  if (cursor < 2) {
-    snprintf(buf, sizeof(buf), "%cTmin %+3d C", cursor == 0 ? '>' : ' ', t_min);
-    draw_line(lcd, 0, buf);
-    snprintf(buf, sizeof(buf), "%cTmax %+3d C  1/3", cursor == 1 ? '>' : ' ',
-             t_max);
-    draw_line(lcd, 1, buf);
-    return;
-  }
-
-  if (cursor < 4) {
-    // Наличие привода заслонки — переключатель, а не число: шаг всегда один.
-    snprintf(buf, sizeof(buf), "%cVALVE %s", cursor == 2 ? '>' : ' ',
-             valve_enabled ? "ON" : "OFF");
-    draw_line(lcd, 0, buf);
-    snprintf(buf, sizeof(buf), "%cPULSE %2lu s  2/3", cursor == 3 ? '>' : ' ',
-             (unsigned long)valve_pulse_s);
-    draw_line(lcd, 1, buf);
-    return;
-  }
-
-  // Сброс наработки. Up выставляет yes, Down — no; применяется только по
-  // Select, чтобы случайный уход из меню по таймауту не обнулил счётчик.
-  snprintf(buf, sizeof(buf), "%cRESET RT   %s", cursor == 4 ? '>' : ' ',
-           reset_runtime ? "yes" : "no");
-  draw_line(lcd, 0, buf);
-  draw_line(lcd, 1, " Select=OK   3/3");
 }

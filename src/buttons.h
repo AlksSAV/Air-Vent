@@ -29,6 +29,10 @@ bool buttons_pressed(Button b);
 bool buttons_single_clicked(Button b);
 bool buttons_double_clicked(Button b);
 
+// Удержание: true ровно один раз, когда кнопка остаётся нажатой дольше ms.
+// Отсчёт начинается с подтверждённого фронта, поэтому дребезг его не сдвигает.
+bool buttons_held(Button b, unsigned long ms);
+
 // Сбросить накопленные события кликов (если кнопка не использовалась).
 void buttons_reset_clicks();
 

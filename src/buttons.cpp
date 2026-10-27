@@ -16,6 +16,12 @@ static unsigned long s_click_ms = 0;
 static Button s_single_btn = BTN_NONE;
 static Button s_double_btn = BTN_NONE;
 
+// Удержание отсчитывается от подтверждённого фронта. Флаг нужен, чтобы
+// событие пришло один раз: иначе каждый цикл loop() считал бы кнопку
+// удержанной и повторял действие.
+static unsigned long s_hold_start_ms = 0;
+static bool s_hold_fired = false;
+
 // Середина между эталонными уровнями двух соседних клавиш — естественная
 // граница, она устойчива к разбросу резисторов щита лучше, чем фиксированный
 // допуск вокруг одного значения. Незанятый вход подтянут к Vcc (АЦП ~1023),
@@ -67,7 +73,11 @@ void buttons_poll() {
     s_stable_prev = s_stable;
     s_stable = raw;
 
-    if (raw != BTN_NONE) register_press(raw, now);
+    if (raw != BTN_NONE) {
+      register_press(raw, now);
+      s_hold_start_ms = now;
+      s_hold_fired = false;
+    }
     return;  // s_stable_prev обновлён, фронт увидит этот цикл
   }
 
@@ -100,9 +110,18 @@ bool buttons_double_clicked(Button b) {
   return true;
 }
 
+bool buttons_held(Button b, unsigned long ms) {
+  if (b == BTN_NONE || s_stable != b) return false;
+  if (s_hold_fired) return false;
+  if ((millis() - s_hold_start_ms) < ms) return false;
+  s_hold_fired = true;
+  return true;
+}
+
 void buttons_reset_clicks() {
   s_click_btn = BTN_NONE;
   s_click_count = 0;
   s_single_btn = BTN_NONE;
   s_double_btn = BTN_NONE;
+  s_hold_fired = true;  // нажатие, начатое до сброса, удержанием не считается
 }
