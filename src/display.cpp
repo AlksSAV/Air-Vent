@@ -7,6 +7,10 @@ static Screen s_screen = SCREEN_CLIMATE;
 static unsigned long s_last_draw_ms = 0;
 static bool s_force_redraw = true;
 
+// Момент последней смены экрана: от него отсчитывается автолистание, поэтому
+// экран, выбранный кнопкой, держится не меньше SCREEN_AUTO_ADVANCE_MS.
+static unsigned long s_screen_since_ms = 0;
+
 // Подсветка гаснет по бездействию клавиш. Таймер отдельный от перерисовки:
 // экран продолжает обновляться, гаснет только подсветка.
 static unsigned long s_last_activity_ms = 0;
@@ -104,6 +108,7 @@ void display_init(LiquidCrystal& lcd) {
 
 void display_next_screen() {
   s_screen = (Screen)((s_screen + 1) % SCREENS_COUNT);
+  s_screen_since_ms = millis();
   s_force_redraw = true;
 }
 
@@ -136,6 +141,16 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
                   const BaroData& baro, FanStatus fan, const Settings& st) {
   unsigned long now = millis();
   update_backlight(now);
+
+  // Автолистание: экран меняется сам, если человек его не трогал. Отсчёт
+  // идёт от последней смены, поэтому только что выбранный экран не сбежит
+  // из-под пальца.
+  if ((now - s_screen_since_ms) >= SCREEN_AUTO_ADVANCE_MS) {
+    s_screen = (Screen)((s_screen + 1) % SCREENS_COUNT);
+    s_screen_since_ms = now;
+    s_force_redraw = true;
+  }
+
   if (!s_force_redraw && (now - s_last_draw_ms) < DISPLAY_PERIOD_MS) return;
   s_last_draw_ms = now;
   s_force_redraw = false;
