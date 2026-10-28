@@ -49,6 +49,7 @@ void settings_init() {
     write_u32(EEPROM_RUNTIME_ADDR, 0);
     EEPROM.update(EEPROM_VALVE_ADDR, 0);
     write_u16(EEPROM_VPULSE_ADDR, VALVE_PULSE_DEFAULT_S);
+    write_i16(EEPROM_TINMIN_ADDR, T_IN_MIN_DEFAULT);
   }
 
   s_settings.t_min = read_i16(EEPROM_TMIN_ADDR);
@@ -65,6 +66,18 @@ void settings_init() {
       s_settings.valve_pulse_s > VALVE_PULSE_MAX_S) {
     s_settings.valve_pulse_s = VALVE_PULSE_DEFAULT_S;
     write_u16(EEPROM_VPULSE_ADDR, s_settings.valve_pulse_s);
+  }
+
+  // The indoor limit appeared after the others, so boards flashed with an
+  // older firmware hold garbage in these cells (usually 0xFF 0xFF). A value
+  // outside the range means "the parameter has never been set" and is replaced
+  // by the factory one. The magic number stays untouched on purpose: bumping
+  // it would reset the accumulated fan runtime.
+  s_settings.t_in_min = read_i16(EEPROM_TINMIN_ADDR);
+  if (s_settings.t_in_min < T_IN_MIN_ALLOWED_MIN ||
+      s_settings.t_in_min > T_IN_MIN_ALLOWED_MAX) {
+    s_settings.t_in_min = T_IN_MIN_DEFAULT;
+    write_i16(EEPROM_TINMIN_ADDR, s_settings.t_in_min);
   }
 
   // Повреждённые при выключании питания пределы не должны ломать логику.
@@ -111,11 +124,20 @@ bool settings_adjust_valve_pulse(int8_t delta) {
   return true;
 }
 
+bool settings_adjust_t_in_min(int8_t delta) {
+  int16_t next = s_settings.t_in_min + delta * T_IN_MIN_STEP;
+  next = constrain(next, (int16_t)T_IN_MIN_ALLOWED_MIN, (int16_t)T_IN_MIN_ALLOWED_MAX);
+  if (next == s_settings.t_in_min) return false;
+  s_settings.t_in_min = next;
+  return true;
+}
+
 void settings_commit() {
   write_i16(EEPROM_TMIN_ADDR, s_settings.t_min);
   write_i16(EEPROM_TMAX_ADDR, s_settings.t_max);
   EEPROM.update(EEPROM_VALVE_ADDR, s_settings.valve_enabled ? 1 : 0);
   write_u16(EEPROM_VPULSE_ADDR, s_settings.valve_pulse_s);
+  write_i16(EEPROM_TINMIN_ADDR, s_settings.t_in_min);
 }
 
 void settings_reset_runtime() {

@@ -295,7 +295,23 @@ void fan_update(const SensorData& out, const SensorData& in,
     return;
   }
 
-  // 5. Защита от конденсата. Приточный воздух безопасен, пока его точка росы
+  // 5. Lower bound of the indoor temperature. The run limit alone is not a
+  //    protection against overcooling: thirty minutes on and fifteen off still
+  //    walks the room toward the outdoor temperature, because the limit counts
+  //    the fan, not the air it moves. Here the indoor sensor takes part in the
+  //    decision directly, so the fan stops as soon as the room itself gets
+  //    cold. Checked before the humidity hysteresis: drying a room at the cost
+  //    of its temperature is not drying anything.
+  //    Same band as the corridor: the set point is an integer, the reading
+  //    carries noise, and a flip at the threshold costs two strokes of the
+  //    drive.
+  if (in.temperature < (float)st.t_in_min - (running ? T_IN_MIN_HYST_C : 0.0f)) {
+    stop(BLOCK_TEMP_IN_LOW);
+    relay(false);
+    return;
+  }
+
+  // 6. Защита от конденсата. Приточный воздух безопасен, пока его точка росы
   //    не поднялась к температуре самой холодной конструкции. Пока датчик
   //    поверхности исправен, берается его реальное показание; иначе
   //    конструкции аппроксимируются внутренним воздухом минус запас.
@@ -307,7 +323,7 @@ void fan_update(const SensorData& out, const SensorData& in,
     return;
   }
 
-  // 6. Гистерезис по абсолютной влажности.
+  // 7. Гистерезис по абсолютной влажности.
   if (s_status.mode == FAN_RUNNING) {
     // Valve position can change without the controller's knowledge: the
     // operator switched VALVE in the settings menu and the flap went home.

@@ -210,6 +210,24 @@
 // the reading is a float with +-0.5 degC of noise.
 #define T_CORRIDOR_HYST_C 1.0f
 
+// Lowest allowed indoor temperature. The run limit alone cannot protect the
+// room from overcooling: 30 minutes on and 15 minutes off still moves the whole
+// room toward the outdoor temperature when the inlet air is much colder. This
+// set point reads the indoor sensor directly, so it stops the fan as soon as
+// the room itself gets cold, and it is checked before the humidity hysteresis -
+// drying the room is pointless if it costs its temperature.
+#define T_IN_MIN_DEFAULT 5
+
+// Range of the indoor floor setting, deg.
+#define T_IN_MIN_ALLOWED_MIN 0
+#define T_IN_MIN_ALLOWED_MAX 20
+#define T_IN_MIN_STEP 1
+
+// The fan keeps running this much above the floor. Same reason as the corridor
+// hysteresis: the indoor reading has noise, and without a band the relay would
+// flip at the threshold and every flip costs two full strokes of the drive.
+#define T_IN_MIN_HYST_C 1.0f
+
 // Ограничение непрерывной работы вентилятора и обязательный пауза после неё.
 #define FAN_RUN_MAX_MS (30UL * 60UL * 1000UL)
 #define FAN_PAUSE_MS   (15UL * 60UL * 1000UL)
@@ -267,5 +285,6 @@
 #define EEPROM_RUNTIME_ADDR 5  // uint32, накопленные секунды работы
 #define EEPROM_VALVE_ADDR  9  // uint8, есть ли в сборке привод заслонки
 #define EEPROM_VPULSE_ADDR 10 // uint16, длительность импульса привода, сек
+#define EEPROM_TINMIN_ADDR 12 // int16, нижний предел температуры внутри, град
 
 #endif  // CONFIG_H

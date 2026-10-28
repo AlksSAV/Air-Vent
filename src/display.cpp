@@ -61,6 +61,7 @@ static const char* block_text(FanStatus fan) {
     case BLOCK_SENSOR: return "OFF:SENS";
     case BLOCK_TEMP_LOW: return "OFF:T-LO";
     case BLOCK_TEMP_HIGH: return "OFF:T-HI";
+    case BLOCK_TEMP_IN_LOW: return "OFF:T-IN";
     case BLOCK_DEW: return "OFF:DEW";
     case BLOCK_DRY: return "OFF:DRY";
     case BLOCK_VALVE: return "OFF:VALVE";

@@ -30,7 +30,7 @@ static void redraw() { s_dirty = true; }
 
 static uint8_t item_count(MenuPage page) {
   switch (page) {
-    case PAGE_TEMP: return 2;   // Tmin, Tmax
+    case PAGE_TEMP: return 3;   // Tmin, Tmax, Tin
     case PAGE_VALVE: return 2;  // VALVE, PULSE
     case PAGE_MISC: return 2;   // RESET RT, версия
     default: return 3;          // TEMP, VALVE, MISC
@@ -68,8 +68,14 @@ bool menu_update() {
     int8_t step = buttons_pressed(BTN_RIGHT) ? 1 : -1;
     bool changed = false;
     if (s_page == PAGE_TEMP) {
-      changed = (s_cursor == 0) ? settings_adjust_t_min(step)
-                                : settings_adjust_t_max(step);
+      // Three items on two rows: cursor 0/1/2 maps to Tmin, Tmax, Tin.
+      if (s_cursor == 0) {
+        changed = settings_adjust_t_min(step);
+      } else if (s_cursor == 1) {
+        changed = settings_adjust_t_max(step);
+      } else {
+        changed = settings_adjust_t_in_min(step);
+      }
     } else if (s_page == PAGE_VALVE) {
       // Привод — переключатель, шаг у него всегда один.
       if (s_cursor == 0) {
@@ -146,14 +152,31 @@ void menu_draw(LiquidCrystal& lcd) {
   const char* mark = ">";
 
   switch (s_page) {
-    case PAGE_TEMP:
-      snprintf(buf, sizeof(buf), "%sTmin %+3d C",
-               s_cursor == 0 ? mark : " ", settings_get().t_min);
-      display_text(lcd, 0, buf);
-      snprintf(buf, sizeof(buf), "%sTmax %+3d C",
-               s_cursor == 1 ? mark : " ", settings_get().t_max);
-      display_text(lcd, 1, buf);
+    case PAGE_TEMP: {
+      Settings st = settings_get();
+      // Three parameters on two rows, so the window scrolls with the cursor.
+      // A counter in the lower right corner shows that the list scrolled,
+      // not replaced entirely: without it Tmax on the top row would look like a
+      // completely new item.
+      uint8_t top = s_cursor < 2 ? 0 : 1;
+      for (uint8_t row = 0; row < 2; ++row) {
+        uint8_t idx = top + row;
+        const char* mark_here = idx == s_cursor ? mark : " ";
+        if (idx == 0)
+          snprintf(buf, sizeof(buf), "%sTmin %+3d C", mark_here, st.t_min);
+        else if (idx == 1)
+          snprintf(buf, sizeof(buf), "%sTmax %+3d C", mark_here, st.t_max);
+        else
+          snprintf(buf, sizeof(buf), "%sTin  %+3d C", mark_here, st.t_in_min);
+        if (row == 1) {
+          size_t len = strlen(buf);
+          snprintf(buf + len, sizeof(buf) - len, " %u/3",
+                   (unsigned)s_cursor + 1);
+        }
+        display_text(lcd, row, buf);
+      }
       break;
+    }
 
     case PAGE_VALVE: {
       Settings st = settings_get();

@@ -147,31 +147,30 @@ void loop() {
 
 #ifdef TELEMETRY
   // Телеметрия для отладки: одно короткое сообщение раз в 5 с.
-  // В прошивке без TELEMETRY этот блок вырезан целиком: он стоит about
-  // 1.7 КБ flash (Print::print(float) тянет за собой ~1.5 КБ) и, что
-  // важнее, печатает в том же проходе loop(), где DHT держит прерывания
-  // выключенными до 42 мс - на 115200 это потеря части строки.
+  // Telemetry is cut out entirely from the release build.
+  //
+  // Every number is sent as whole tenths (24.5 deg becomes "245"):
+  // Print::print(float) links printFloat(), about 1.5 KB of flash, and the
+  // release env sits at 93.9 % while the debug env at 99.0 %. After the indoor
+  // limit was added there is no room left for a float formatter. Tenths are
+  // precise enough for debugging and they shorten the line as a side effect.
   static unsigned long s_telemetry_ms = 0;
   if ((millis() - s_telemetry_ms) >= SERIAL_LOG_PERIOD_MS) {
     s_telemetry_ms = millis();
-    Serial.print(F("O "));
-    Serial.print(out.temperature, 1);
+    Serial.print(F("O"));
+    Serial.print((long)(out.temperature * 10.0f));
     Serial.print(F("/"));
-    Serial.print(out.humidity, 0);
+    Serial.print((long)(out.humidity + 0.5f));
     Serial.print(F("/"));
-    Serial.print(out.absolute_humidity, 2);
-    Serial.print(F(" I "));
-    Serial.print(in.temperature, 1);
+    Serial.print((long)(out.absolute_humidity * 10.0f));
+    Serial.print(F(" I"));
+    Serial.print((long)(in.temperature * 10.0f));
     Serial.print(F("/"));
-    Serial.print(in.humidity, 0);
+    Serial.print((long)(in.humidity + 0.5f));
     Serial.print(F("/"));
-    Serial.print(in.absolute_humidity, 2);
-    Serial.print(F(" F "));
-    if (floor.valid) {
-      Serial.print(floor.temperature, 1);
-    } else {
-      Serial.print(F("-"));
-    }
+    Serial.print((long)(in.absolute_humidity * 10.0f));
+    Serial.print(F(" F"));
+    Serial.print(floor.valid ? (long)(floor.temperature * 10.0f) : 0);
     Serial.print(F(" M"));
     Serial.print((int)fan.mode);
     Serial.print(F(" B"));
