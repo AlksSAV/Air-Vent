@@ -13,6 +13,10 @@ static unsigned long s_run_start_ms = 0;
 // Начало фазы паузы (COOLDOWN) — отсчёт обязательного простоя.
 static unsigned long s_phase_start_ms = 0;
 
+// Момент, с которого пол подряд остаётся мокрым при работающем вентиляторе.
+// Ноль — конденсата нет или вентилятор стоит.
+static unsigned long s_wet_since_ms = 0;
+
 // Момент, до которого наработка уже передана в settings. Хранится отдельно,
 // потому что в EEPROM пишем целые секунды, а проверка лимита идёт по миллисекундам.
 static unsigned long s_credited_ms = 0;
@@ -131,6 +135,8 @@ void fan_init() {
   s_status.block = BLOCK_SENSOR;  // достоверных данных ещё нет
   s_status.runtime_s = settings_get().fan_runtime_s;
   s_status.surface_wet = false;
+  s_status.inlet_cold = false;
+  s_wet_since_ms = 0;
   s_run_start_ms = 0;
   s_credited_ms = millis();
   // The minimum rest is meant to stop cycling, not to delay commissioning,
@@ -199,6 +205,28 @@ void fan_update(const SensorData& out, const SensorData& in,
   // он не влияет.
   s_status.surface_wet = floor_ok && in.valid &&
                          dew_point(in.temperature, in.humidity) > floor.temperature;
+
+  // Cold inlet air is not a reason to stop by itself: it is exactly the winter
+  // drying case. It is reported so the operator sees why the floor may get wet
+  // later, and the run limit above handles the case where it actually does.
+  s_status.inlet_cold = in.valid && out.valid &&
+                        dew_point(in.temperature, in.humidity) > out.temperature;
+
+  // A wet floor is normally the symptom the fan is here to remove, so the only
+  // thing that stops on it is persistence: once the surface has been wet for
+  // FLOOR_WET_MAX_MS since the fan started drying, the incoming air has cooled
+  // it below the dew point of the room air and the fan feeds condensation
+  // instead of drying. The clock starts only while the fan runs - a cellar that
+  // is wet before the first start must get that start - and it is not reset by
+  // a stop, only by the floor actually drying: restarting into the same wet
+  // surface would buy nothing but two more strokes of the drive.
+  if (!s_status.surface_wet) {
+    s_wet_since_ms = 0;
+  } else if (relay_engaged(s_status.mode) && s_wet_since_ms == 0) {
+    s_wet_since_ms = now;
+  }
+  bool wet_persisted = s_wet_since_ms != 0 &&
+                       (now - s_wet_since_ms) >= FLOOR_WET_MAX_MS;
 
   // Принудительный режим имеет безусловный приоритет: решение принял человек,
   // поэтому алгоритм осушения и все его ограничители (включая достоверность
@@ -349,6 +377,15 @@ void fan_update(const SensorData& out, const SensorData& in,
       relay(false);
       return;
     }
+    // Упорный конденсат на полу при работающем вентиляторе: приток остудил
+    // поверхность ниже точки росы комнатного воздуха и теперь воду не уносит,
+    // а добавляет. Дальше крутить бессмысленно — помещение нужно греть, а не
+    // вентилировать, и решение об этом принимает человек.
+    if (wet_persisted) {
+      stop(BLOCK_WET);
+      relay(false);
+      return;
+    }
     // Выключаем, только когда преимущество наружного воздуха почти иссякло:
     // нижний порог ниже верхнего и не даёт реле циклировать на месте.
     // Минимальное время работы держит привод в покое: каждый пуск стоит двух
@@ -364,6 +401,13 @@ void fan_update(const SensorData& out, const SensorData& in,
 
   // IDLE: включаем при достаточной разнице. Значения между порогами
   // оставляют контроллер в покое — это и есть зона нечувствительности.
+  // Упорный конденсат запрещает и пуск: цикл старт-стоп на мокром полу стоит
+  // приводу двух ходов и ровно ничего не сушит.
+  if (wet_persisted) {
+    s_status.block = BLOCK_WET;
+    relay(false);
+    return;
+  }
   if (diff > X_HYST_ON && relay_allowed_on(now)) {
     start(now);
     relay(false);

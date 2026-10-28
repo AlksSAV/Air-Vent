@@ -63,6 +63,7 @@ static const char* block_text(FanStatus fan) {
     case BLOCK_TEMP_HIGH: return "OFF:T-HI";
     case BLOCK_TEMP_IN_LOW: return "OFF:T-IN";
     case BLOCK_DEW: return "OFF:DEW";
+    case BLOCK_WET: return "OFF:WET";
     case BLOCK_DRY: return "OFF:DRY";
     case BLOCK_VALVE: return "OFF:VALVE";
     default: return "OFF";
@@ -285,6 +286,14 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
       draw_line(lcd, 0, buf);
       // Точка росы притока: именно к ней сравнивается температура пола, когда
       // решается, пускать ли вентилятор (OFF:DEW).
+      // Когда уличный воздух холоднее точки росы помещения, приток остудит пол
+      // до этой точки и роса пойдёт уже из комнатного воздуха. Само по себе это
+      // не запрет (так сушится зимой), но человек обязан видеть причину, если
+      // пол начнёт мокреть.
+      if (fan.inlet_cold) {
+        draw_line(lcd, 1, "TOUT<Tdew: WET!");
+        break;
+      }
       fmt_1dp(v1, sizeof(v1), dew_point(out.temperature, out.humidity), false);
       snprintf(buf, sizeof(buf), "Tdew out%6s\xDF" "C", v1);
       draw_line(lcd, 1, buf);

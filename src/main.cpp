@@ -157,28 +157,20 @@ void loop() {
   static unsigned long s_telemetry_ms = 0;
   if ((millis() - s_telemetry_ms) >= SERIAL_LOG_PERIOD_MS) {
     s_telemetry_ms = millis();
-    Serial.print(F("O"));
-    Serial.print((long)(out.temperature * 10.0f));
-    Serial.print(F("/"));
-    Serial.print((long)(out.humidity + 0.5f));
-    Serial.print(F("/"));
-    Serial.print((long)(out.mixing_ratio * 10.0f));
-    Serial.print(F(" I"));
-    Serial.print((long)(in.temperature * 10.0f));
-    Serial.print(F("/"));
-    Serial.print((long)(in.humidity + 0.5f));
-    Serial.print(F("/"));
-    Serial.print((long)(in.mixing_ratio * 10.0f));
-    Serial.print(F(" F"));
-    Serial.print(floor.valid ? (long)(floor.temperature * 10.0f) : 0);
-    Serial.print(F(" M"));
-    Serial.print((int)fan.mode);
-    Serial.print(F(" B"));
-    Serial.print((int)fan.block);
-    Serial.print(F(" R"));
-    Serial.print(fan_is_on());
-    Serial.print(F(" V"));
-    Serial.println((int)valve_position());
+
+    // One snprintf instead of two dozen Serial.print calls: the integer
+    // formatter is already linked in by display.cpp, while every print() costs
+    // its own call site. The env has no room left for those.
+    char line[64];
+    snprintf(line, sizeof(line), "O%ld/%ld/%ld I%ld/%ld/%ld F%ld M%d B%d R%d V%d",
+             (long)(out.temperature * 10.0f), (long)(out.humidity + 0.5f),
+             (long)(out.mixing_ratio * 10.0f),
+             (long)(in.temperature * 10.0f), (long)(in.humidity + 0.5f),
+             (long)(in.mixing_ratio * 10.0f),
+             floor.valid ? (long)(floor.temperature * 10.0f) : 0L,
+             (int)fan.mode, (int)fan.block, (int)fan_is_on(),
+             (int)valve_position());
+    Serial.println(line);
   }
 #endif
 

@@ -13,6 +13,7 @@ enum FanBlock : uint8_t {
   BLOCK_TEMP_HIGH,  // наружный теплее верхнего предела
   BLOCK_TEMP_IN_LOW,  // внутри помещения холоднее нижнего предела
   BLOCK_DEW,        // риск конденсата: точка росы притока слишком высока
+  BLOCK_WET,        // пол остаётся мокрым при работающем вентиляторе
   BLOCK_DRY,        // осушать нечего, наружный воздух не суше внутреннего
   BLOCK_COOLDOWN,   // обязательная пауза после лимита непрерывной работы
   BLOCK_VALVE,      // заслонка не готова: идёт открытие/закрытие
@@ -30,10 +31,16 @@ struct FanStatus {
   FanMode    mode;
   FanBlock   block;
   uint32_t   runtime_s;  // накопленные секунды работы
-  // Внутренний воздух уже насыщен относительно холодной поверхности: на полу
-  // идёт конденсат. Это диагноз, а не блокер — приток более сухого воздуха
+  // Внутренний воздух уже насыщен относительно самой холодной поверхности: на полу
+  // идёт конденсат. Это диагноз, а не запрет — приток более сухого воздуха
   // как раз и лечит ситуацию, поэтому на решение о работе он не влияет.
   bool       surface_wet;
+  // Outdoor air is colder than the dew point of the room air: blowing it in
+  // cools the floor below that point, so condensation starts coming from the
+  // room instead of from the inlet. On its own this is not a prohibition - it
+  // is how a cellar dries in winter - so it is only reported on screen, and
+  // only a persistent wet floor stops the fan. See BLOCK_WET.
+  bool       inlet_cold;
 };
 
 void fan_init();

@@ -220,6 +220,15 @@
 // the limit than starting.
 #define DEW_HYST_C 1.0f
 
+// How long the floor may stay wet while the fan is actually running. The check
+// above only asks whether the inlet air deposits water on the surface it has
+// now; it cannot see that cold inlet air cools the surface itself. Once the
+// floor falls below the dew point of the room air, condensation comes from the
+// room, and a fan that keeps running is feeding it. Only a persistent wet
+// floor stops the cycle: the reading is noisy, and the condition clears itself
+// as the room dries, so a brief WET must not abort a working run.
+#define FLOOR_WET_MAX_MS (20UL * 60UL * 1000UL)
+
 // Same for the outdoor temperature corridor: the set points are integers while
 // the reading is a float with +-0.5 degC of noise.
 #define T_CORRIDOR_HYST_C 1.0f
