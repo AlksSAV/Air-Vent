@@ -83,8 +83,13 @@ void sensors_init() {
   unsigned long now = millis();
   s_out.last_read_ms = now - (SENSOR_PERIOD_MS - SENSOR_FIRST_READ_MS);
   s_in.last_read_ms = s_out.last_read_ms;
+  // Dated from the first successful read, not from boot: until one happens the
+  // data is invalid anyway, and the boot splash is what waits for it.
+  s_out.last_good_ms = now;
+  s_in.last_good_ms = now;
   // Полу тоже нечего ждать две минуты: конверсия стартует сразу после прогрева.
   s_floor.last_read_ms = now - (FLOOR_PERIOD_MS - SENSOR_FIRST_READ_MS);
+  s_floor.last_good_ms = now;
   s_baro.last_read_ms = s_out.last_read_ms;
   s_baro.pressure_hpa = AMBIENT_HPA;
 }
@@ -107,13 +112,17 @@ static void read_sensor(DHT& dht, SensorData& data, uint8_t& errors) {
     data.absolute_humidity = absolute_humidity(temp, hum);
     data.mixing_ratio = mixing_ratio(temp, hum, s_pressure_hpa);
     data.valid = true;
+    data.last_good_ms = millis();
     return;
   }
 
+  // A single failed read is the normal price of a long wire and of the SSR
+  // switching next to it. Invalidating the data at once stopped the fan and
+  // cost a full close-and-open cycle of the drive on every such glitch, so
+  // SENSOR_MAX_ERRORS is what this counter was added for: the last good
+  // reading stays in place until the failures are too many to be one glitch.
   if (errors < SENSOR_MAX_ERRORS) errors++;
-  // Последнее достоверное значение сохраняем: контроллер сам отбракует
-  // данные по давности через DATA_STALE_MS.
-  data.valid = false;
+  if (errors >= SENSOR_MAX_ERRORS) data.valid = false;
 }
 
 // Опрос DS18B20 в два прохода: запуск конверсии и, спустя FLOOR_CONVERT_MS,
@@ -133,6 +142,7 @@ static void update_floor(unsigned long now) {
       s_floor.temperature = temp;
       s_floor.valid = true;
       s_floor.last_read_ms = now;
+      s_floor.last_good_ms = now;
       return;
     }
 

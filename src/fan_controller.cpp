@@ -105,7 +105,7 @@ void fan_update(const SensorData& out, const SensorData& in,
   // Датчик поверхности — единственный в схеме необязательный элемент: его
   // отказ не должен останавливать осушение, поэтому для него отдельная
   // проверка давности и собственный запас в проверке росы.
-  bool floor_ok = floor.valid && (now - floor.last_read_ms) < DATA_STALE_MS;
+  bool floor_ok = floor.valid && (now - floor.last_good_ms) < DATA_STALE_MS;
   float t_crit = floor_ok ? floor.temperature : in.temperature - DEW_FALLBACK_C;
 
   // Внутренний воздух насыщен относительно самой холодной поверхности — значит,
@@ -144,9 +144,12 @@ void fan_update(const SensorData& out, const SensorData& in,
 
   // 1. Свежесть и достоверность данных — безусловный приоритет: нельзя
   //    принимать решение об осушении по несуществующим показаниям.
+  //    Давность считается по последнему успешному чтению: last_read_ms
+  //    обновляется и при неудаче (он отсчитывает период опроса), поэтому
+  //    по нему DATA_STALE_MS был бы недостижим.
   bool fresh = out.valid && in.valid &&
-               (now - out.last_read_ms) < DATA_STALE_MS &&
-               (now - in.last_read_ms) < DATA_STALE_MS;
+               (now - out.last_good_ms) < DATA_STALE_MS &&
+               (now - in.last_good_ms) < DATA_STALE_MS;
   if (!fresh) {
     stop(BLOCK_SENSOR);
     relay(false);

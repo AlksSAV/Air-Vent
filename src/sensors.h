@@ -10,7 +10,12 @@ struct SensorData {
   float absolute_humidity;  // г/м3, вычисляется внутри
   float mixing_ratio;       // г/кг, вычисляется внутри при текущем давлении
   bool  valid;
-  unsigned long last_read_ms;
+  unsigned long last_read_ms;  // момент последней ПОПЫТКИ чтения: по нему
+                               // отсчитывается SENSOR_PERIOD_MS, чтобы отказ
+                               // не превращал опрос в каждый проход loop()
+  unsigned long last_good_ms;  // момент последнего УСПЕШНОГО чтения: по нему
+                               // контроллер проверяет давность через
+                               // DATA_STALE_MS
 };
 
 // Температура самой холодной поверхности в помещении (пол). Влажность ей не
@@ -19,7 +24,10 @@ struct SensorData {
 struct SurfaceData {
   float temperature;
   bool  valid;
-  unsigned long last_read_ms;
+  unsigned long last_read_ms;  // период опроса: обновляется при запуске
+                               // конверсии, иначе отказ датчика заставлял бы
+                               // запрашивать её на каждом проходе loop()
+  unsigned long last_good_ms;  // последнее успешное чтение, для DATA_STALE_MS
 };
 
 // Барометр. Влагосодержание входит в решение разностью, где ошибка по
