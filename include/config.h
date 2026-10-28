@@ -60,6 +60,13 @@
 #define VALVE_PULSE_MAX_S  60
 #define VALVE_PULSE_STEP_S 1
 
+// Break-before-make pause between switching the drive relays. Contacts of a
+// relay need a few milliseconds to fall back; without the pause the new
+// direction closes while the old one is still shut, putting both phases of
+// the motor under voltage at the same time. With COM1 and COM2 taken from the
+// same phase nothing shorts, but drives usually require a dead time anyway.
+#define VALVE_DEADTIME_MS 60UL
+
 // ---------------------------------------------------------------------------
 // Клавиатура щита: эталонные значения АЦП (10 бит) при нажатой клавише.
 // Границы между клавишами берутся как середины между этими уровнями.

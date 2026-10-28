@@ -30,11 +30,23 @@ static unsigned long s_move_started_ms = 0;
 // completes. valve_home() ignores it on purpose.
 static bool s_pos_known = false;
 
+// Break-before-make state. drive() writes both pins in one pass, but a relay
+// needs a few milliseconds to fall back: switching open on while close is
+// still shut leaves both motor phases under voltage. The window is only
+// harmless because COM1 and COM2 come from the same phase - take two
+// different phases and that is a short circuit through the winding. So a
+// direction change releases both coils, waits VALVE_DEADTIME_MS as a state of
+// the machine (not a delay()), and only then energizes the new direction.
+static bool s_deadtime = false;
+static bool s_deadtime_want_open = false;
+static unsigned long s_deadtime_started_ms = 0;
+
 void valve_init() {
   pinMode(PIN_VALVE_OPEN, OUTPUT);
   pinMode(PIN_VALVE_CLOSE, OUTPUT);
   drive(false, false);
   s_moving = false;
+  s_deadtime = false;
   s_pos_known = false;
 }
 
@@ -47,7 +59,7 @@ ValvePos valve_position() {
   // Без привода канал открыт постоянно: вся логика тогда совпадает с прошивкой
   // до появления заслонки.
   if (!valve_present()) return VALVE_POS_OPEN;
-  if (s_moving) return VALVE_POS_MOVING;
+  if (s_moving || s_deadtime) return VALVE_POS_MOVING;
   // Пока положение не подтверждено отработавшим импульсом, считаем заслонку
   // закрытой: контроллер обязан выдать полный ход открытия, прежде чем
   // включать вентилятор, а не поверить последнему сохранённому значению.
@@ -67,6 +79,15 @@ void valve_home() {
   valve_close();
 }
 
+// Starts a dead time window and remembers which direction to take afterwards.
+static void start_deadtime(bool want_open) {
+  drive(false, false);
+  s_moving = false;
+  s_deadtime = true;
+  s_deadtime_want_open = want_open;
+  s_deadtime_started_ms = millis();
+}
+
 void valve_open() {
   if (!valve_present()) return;
   // Повторный вызов не должен перезапускать отсчёт хода: контроллер обращается
@@ -75,6 +96,15 @@ void valve_open() {
   // The flap is already fully open: a fresh pulse would only stall the motor
   // against its end switch for the whole duration.
   if (!s_moving && s_pos_known && s_moving_open) return;
+
+  if (s_deadtime) {
+    s_deadtime_want_open = true;
+    return;
+  }
+  if (s_moving) {
+    start_deadtime(true);
+    return;
+  }
 
   drive(true, false);
   s_moving = true;
@@ -87,6 +117,15 @@ void valve_close() {
   if (s_moving && !s_moving_open) return;
   if (!s_moving && s_pos_known && !s_moving_open) return;
 
+  if (s_deadtime) {
+    s_deadtime_want_open = false;
+    return;
+  }
+  if (s_moving) {
+    start_deadtime(false);
+    return;
+  }
+
   drive(false, true);
   s_moving = true;
   s_moving_open = false;
@@ -94,13 +133,30 @@ void valve_close() {
 }
 
 void valve_update() {
+  unsigned long now = millis();
+
+  if (s_deadtime) {
+    if ((now - s_deadtime_started_ms) < VALVE_DEADTIME_MS) return;
+    s_deadtime = false;
+    bool want_open = s_deadtime_want_open;
+    s_deadtime_want_open = false;
+
+    // The dead time is over, so the coils really go through this function:
+    // recursion here would re-enter the window that was just closed.
+    drive(want_open, !want_open);
+    s_moving = true;
+    s_moving_open = want_open;
+    s_move_started_ms = now;
+    return;
+  }
+
   if (!s_moving) return;
 
   // Длительность импульса читается из настройки при каждом проходе: уставка
   // меняется в меню без перезагрузки.
   unsigned long pulse_ms =
       (unsigned long)settings_get().valve_pulse_s * 1000UL;
-  if ((millis() - s_move_started_ms) < pulse_ms) return;
+  if ((now - s_move_started_ms) < pulse_ms) return;
 
   s_moving = false;
   s_pos_known = true;
