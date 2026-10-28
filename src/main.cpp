@@ -162,13 +162,13 @@ void loop() {
     Serial.print(F("/"));
     Serial.print((long)(out.humidity + 0.5f));
     Serial.print(F("/"));
-    Serial.print((long)(out.absolute_humidity * 10.0f));
+    Serial.print((long)(out.mixing_ratio * 10.0f));
     Serial.print(F(" I"));
     Serial.print((long)(in.temperature * 10.0f));
     Serial.print(F("/"));
     Serial.print((long)(in.humidity + 0.5f));
     Serial.print(F("/"));
-    Serial.print((long)(in.absolute_humidity * 10.0f));
+    Serial.print((long)(in.mixing_ratio * 10.0f));
     Serial.print(F(" F"));
     Serial.print(floor.valid ? (long)(floor.temperature * 10.0f) : 0);
     Serial.print(F(" M"));

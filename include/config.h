@@ -172,17 +172,31 @@
 // Алгоритм осушения
 // ---------------------------------------------------------------------------
 
-// Гистерезис по абсолютной влажности, г/м3. Вентилятор включается, когда
-// внутри выше снаружи на ABS_HYST_ON, и выключается, когда преимущество
-// снаружи упало ниже ABS_HYST_OFF. Разница порогов и исключает частый цикл.
-#define ABS_HYST_ON  2.0f
-#define ABS_HYST_OFF 0.5f
+// Hysteresis of the drying decision, in g of water per kg of dry air. The fan
+// starts when the room air exceeds the inlet air by X_HYST_ON and stops when
+// that advantage falls below X_HYST_OFF. The gap between them is what keeps the
+// relay from cycling in place.
+//
+// Mixing ratio, not absolute humidity, because the fan moves mass of air: x is
+// unchanged when the inlet air is heated from -10 degC to +20 degC, while g/m3
+// is not. A threshold in g/m3 therefore demanded a different advantage in every
+// season - the same 2.0 g/m3 meant anything from 1.04 to 3.12 g/kg depending on
+// the pair of temperatures, a threefold spread, and cold dry winter air was used
+// less eagerly than the physics allowed.
+//
+// The band is deliberately wider than a unit conversion of the old thresholds
+// (1.6 - 0.4 = 1.2 g/kg): the worst-case noise of one DHT22 pair on this
+// difference is about 1.5 g/kg, and a band narrower than the noise lets the
+// relay flip on a drifting value. The upper threshold carries the widening, so
+// the fan simply needs a slightly clearer advantage to start.
+#define X_HYST_ON  1.9f
+#define X_HYST_OFF 0.4f
 
 // Number of readings the decision is averaged over. One raw DHT22 sample
-// carries +-0.5 degC and +-2 % RH, which is +-0.9 g/m3 on the difference -
-// wider than the ABS_HYST_ON minus ABS_HYST_OFF band, so a single noisy
-// sample could flip the relay. The median of three ignores a lone outlier
-// and costs only two extra polling periods before a state change.
+// carries +-0.5 degC and +-2 % RH, which is up to 1.5 g/kg on the difference in
+// mixing ratio - comparable to the X_HYST_ON minus X_HYST_OFF band, so a single
+// noisy sample could otherwise flip the relay. The median of three ignores a
+// lone outlier and costs only two extra polling periods before a state change.
 #define DIFF_FILTER_SAMPLES 3
 
 // Shortest time the fan stays engaged after it has been switched on, and the

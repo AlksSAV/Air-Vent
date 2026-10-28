@@ -14,7 +14,7 @@ enum Screen : uint8_t {
   SCREEN_ABS,          // абсолютная влажность (ρ)
   SCREEN_SURFACE,      // температура критической поверхности и роса на ней
   SCREEN_BARO,         // влагосодержание (x)
-  SCREEN_DELTA,        // dA и dT
+  SCREEN_DELTA,        // dx и dT
   SCREEN_STATUS,       // состояние вентилятора, наработка, уставки
   SCREENS_COUNT
 };

@@ -241,8 +241,8 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
 
     case SCREEN_BARO: {
       // Влагосодержание (г/кг) сохраняется при нагреве и охлаждении, поэтому
-      // оно честнее показывает, насколько приток действительно суше. Само
-      // решение контроллер продолжает принимать по абсолютной влажности.
+      // именно по нему контроллер решает, сушить ли: приток переносит массу
+      // воздуха, а не объём.
       fmt_1dp(v1, sizeof(v1), out.mixing_ratio, false);
       snprintf(buf, sizeof(buf), "Out x=%5s g/kg", v1);
       draw_line(lcd, 0, buf);
@@ -254,8 +254,8 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
     }
 
     case SCREEN_DELTA: {
-      // Справочные разности: δA — разница абсолютной влажности (внутри минус
-      // снаружи), г/м³; δT — запас поверхности до точки росы, °C.
+      // Справочные разности: δx — разница влагосодержания (внутри минус
+      // снаружи), г/кг; δT — запас поверхности до точки росы, °C.
       // CGRAM-слот 7: пользовательский значок «треугольник с чертой».
       char p[6];
       if (baro.valid) snprintf(p, sizeof(p), "%4ld", (long)(baro.pressure_hpa + 0.5f));
@@ -263,7 +263,7 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
       snprintf(buf, sizeof(buf), "P=%5s hPa", p);
       draw_line(lcd, 0, buf);
 
-      fmt_1dp(v1, sizeof(v1), in.absolute_humidity - out.absolute_humidity, true);
+      fmt_1dp(v1, sizeof(v1), in.mixing_ratio - out.mixing_ratio, true);
       // Без датчика пола запас до росы не измерить: рисуем прочерк вместо числа.
       if (floor.valid) {
         fmt_1dp(v2, sizeof(v2), floor.temperature -

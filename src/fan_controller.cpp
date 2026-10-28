@@ -20,10 +20,14 @@ static unsigned long s_credited_ms = 0;
 // Принудительный режим: флаг переключает только кнопка, таймера на него нет.
 static bool s_force = false;
 
-// Ring buffer of the humidity difference used for the decision. A single
-// DHT22 sample carries +-0.9 g/m3 of noise on the difference, which is wider
-// than the hysteresis band, so the relay could flip on one bad reading. The
-// median of the last DIFF_FILTER_SAMPLES values ignores a lone outlier.
+// Ring buffer of the humidity difference used for the decision. The difference
+// is taken in mixing ratio (g/kg), the mass of vapor per mass of dry air: it is
+// the quantity that survives heating the inlet air from -10 degC to +20 degC,
+// while g/m3 changes with temperature, so a fixed mass-per-volume threshold
+// means a different required advantage in every season. One raw DHT22 sample
+// carries up to +-1.5 g/kg of noise on that difference, so the relay could flip
+// on a lone bad reading. The median of the last DIFF_FILTER_SAMPLES values
+// ignores it.
 static float s_diff_samples[DIFF_FILTER_SAMPLES];
 static uint8_t s_diff_count = 0;
 static uint8_t s_diff_next = 0;
@@ -272,9 +276,11 @@ void fan_update(const SensorData& out, const SensorData& in,
   Settings st = settings_get();
 
   // The difference is pushed once per poll and the decision uses the median of
-  // the last DIFF_FILTER_SAMPLES values. A raw sample is noisier than the
-  // hysteresis band, so one bad reading must not flip the relay.
-  push_diff(in.absolute_humidity - out.absolute_humidity, out.last_good_ms,
+  // the last DIFF_FILTER_SAMPLES values. A raw DHT22 sample carries +-0.5 degC
+  // and +-2 % RH, which is about +-1.5 g/kg on the mixing ratio difference -
+  // wider than the X_HYST_ON minus X_HYST_OFF band, so one bad reading must
+  // not flip the relay. The median of three ignores a lone outlier.
+  push_diff(in.mixing_ratio - out.mixing_ratio, out.last_good_ms,
             in.last_good_ms);
   float diff = median_diff();
   bool running = (s_status.mode == FAN_RUNNING);
@@ -323,7 +329,7 @@ void fan_update(const SensorData& out, const SensorData& in,
     return;
   }
 
-  // 7. Гистерезис по абсолютной влажности.
+  // 7. Гистерезис по влагосодержанию.
   if (s_status.mode == FAN_RUNNING) {
     // Valve position can change without the controller's knowledge: the
     // operator switched VALVE in the settings menu and the flap went home.
@@ -347,7 +353,7 @@ void fan_update(const SensorData& out, const SensorData& in,
     // нижний порог ниже верхнего и не даёт реле циклировать на месте.
     // Минимальное время работы держит привод в покое: каждый пуск стоит двух
     // полных ходов заслонки, а шуму достаточно перескочить через узкую полосу.
-    if (diff < ABS_HYST_OFF && relay_allowed_off(now)) {
+    if (diff < X_HYST_OFF && relay_allowed_off(now)) {
       stop(BLOCK_DRY);
       relay(false);
       return;
@@ -358,7 +364,7 @@ void fan_update(const SensorData& out, const SensorData& in,
 
   // IDLE: включаем при достаточной разнице. Значения между порогами
   // оставляют контроллер в покое — это и есть зона нечувствительности.
-  if (diff > ABS_HYST_ON && relay_allowed_on(now)) {
+  if (diff > X_HYST_ON && relay_allowed_on(now)) {
     start(now);
     relay(false);
     return;
