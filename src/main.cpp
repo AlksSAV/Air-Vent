@@ -154,50 +154,31 @@ void loop() {
   static unsigned long s_telemetry_ms = 0;
   if ((millis() - s_telemetry_ms) >= SERIAL_LOG_PERIOD_MS) {
     s_telemetry_ms = millis();
-    Serial.print(F("OUT "));
+    Serial.print(F("O "));
     Serial.print(out.temperature, 1);
-    Serial.print(F("C "));
+    Serial.print(F("/"));
     Serial.print(out.humidity, 0);
-    Serial.print(F("% abs="));
+    Serial.print(F("/"));
     Serial.print(out.absolute_humidity, 2);
-    Serial.print(F(" | IN "));
+    Serial.print(F(" I "));
     Serial.print(in.temperature, 1);
-    Serial.print(F("C "));
+    Serial.print(F("/"));
     Serial.print(in.humidity, 0);
-    Serial.print(F("% abs="));
+    Serial.print(F("/"));
     Serial.print(in.absolute_humidity, 2);
-    Serial.print(F(" | FLOOR "));
+    Serial.print(F(" F "));
     if (floor.valid) {
       Serial.print(floor.temperature, 1);
-      Serial.print(F("C wet="));
-      Serial.print(fan.surface_wet ? F("1") : F("0"));
     } else {
-      Serial.print(F("--"));
+      Serial.print(F("-"));
     }
-    Serial.print(F(" | BARO "));
-    if (baro.valid) {
-      Serial.print(baro.pressure_hpa, 1);
-    } else {
-      Serial.print(F("--"));
-    }
-    Serial.print(F(" | x out="));
-    Serial.print(out.mixing_ratio, 2);
-    Serial.print(F(" in="));
-    Serial.print(in.mixing_ratio, 2);
-    Serial.print(F(" | FAN "));
-    Serial.print(fan.mode == FAN_RUNNING ? F("ON") :
-                 fan.mode == FAN_FORCE ? F("FORCE") :
-                 fan.mode == FAN_COOLDOWN ? F("PAUSE") : F("OFF"));
-    Serial.print(F(" block="));
+    Serial.print(F(" M"));
+    Serial.print((int)fan.mode);
+    Serial.print(F(" B"));
     Serial.print((int)fan.block);
-    Serial.print(F(" rt="));
-    Serial.print(fan.runtime_s);
-    // Логические уровни выходов: F — вентилятор (1=вкл), V — состояние
-    // привода (0=moving, 1=closed, 2=open), чтобы не путать с физическими
-    // уровнями пина: SSR вентилятора HIGH, реле привода — LOW (GND-trigger).
-    Serial.print(F(" F="));
+    Serial.print(F(" R"));
     Serial.print(fan_is_on());
-    Serial.print(F(" V="));
+    Serial.print(F(" V"));
     Serial.println((int)valve_position());
   }
 #endif
