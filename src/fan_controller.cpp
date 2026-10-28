@@ -203,14 +203,15 @@ void fan_update(const SensorData& out, const SensorData& in,
   // вода на ней уже выпадает. Это диагноз текущей сырости, а не запрет: приток
   // более сухого воздуха как раз и убирает причину, поэтому на решение о работе
   // он не влияет.
-  s_status.surface_wet = floor_ok && in.valid &&
-                         dew_point(in.temperature, in.humidity) > floor.temperature;
+  // Точка росы комнатного воздуха нужна дважды за проход, а стоит она двух
+  // трансцендентных вызовов: считаем один раз.
+  float dew_in = in.valid ? dew_point(in.temperature, in.humidity) : 0.0f;
+  s_status.surface_wet = floor_ok && in.valid && dew_in > floor.temperature;
 
   // Cold inlet air is not a reason to stop by itself: it is exactly the winter
   // drying case. It is reported so the operator sees why the floor may get wet
-  // later, and the run limit above handles the case where it actually does.
-  s_status.inlet_cold = in.valid && out.valid &&
-                        dew_point(in.temperature, in.humidity) > out.temperature;
+  // later, and the wet-floor timer above handles the case where it actually does.
+  s_status.inlet_cold = in.valid && out.valid && dew_in > out.temperature;
 
   // A wet floor is normally the symptom the fan is here to remove, so the only
   // thing that stops on it is persistence: once the surface has been wet for

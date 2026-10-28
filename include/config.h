@@ -292,6 +292,16 @@
 // настройки сохраняются, а интерфейс возвращается в обычный режим.
 #define EDIT_TIMEOUT_MS (30UL * 1000UL)
 
+// Upper bound of a plausible accumulated runtime, seconds. The fan is allowed to
+// run at full duty for years: 100000 h is over 11 years of nonstop operation,
+// far beyond anything the relay or the fan would survive. A larger value in
+// EEPROM cannot be a real count - it is a torn write (the four bytes are written
+// one after another, so losing power mid-write leaves a mix of old and new) or
+// garbage from an unwritten cell - and must never reach the display.
+// Kept in seconds rather than hours so the comparison needs no 32-bit multiply,
+// which would cost the debug build the flash it does not have.
+#define RUNTIME_MAX_S 360000000UL
+
 // Период отладочной телеметрии в Serial, мс.
 #define SERIAL_LOG_PERIOD_MS (5UL * 1000UL)
 
@@ -309,5 +319,11 @@
 #define EEPROM_VALVE_ADDR  9  // uint8, есть ли в сборке привод заслонки
 #define EEPROM_VPULSE_ADDR 10 // uint16, длительность импульса привода, сек
 #define EEPROM_TINMIN_ADDR 12 // int16, нижний предел температуры внутри, град
+// CRC8 over bytes 5..8. The slot is placed after every other field: the tail of
+// the map is byte 13, so on a board where a firmware with a checksum has never
+// written anything this cell still holds 0xFF, the state of an erased byte.
+// That is what lets an upgraded board keep its runtime - 0xFF means "no
+// checksum stored yet", not "the record is damaged".
+#define EEPROM_CRC_ADDR  14  // uint8
 
 #endif  // CONFIG_H

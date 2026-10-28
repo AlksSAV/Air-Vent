@@ -17,6 +17,8 @@ static void write_i16(uint16_t addr, int16_t value) {
   EEPROM.update(addr + 1, (uint8_t)((uint16_t)value & 0xFF));
 }
 
+// Пульс привода — единственное беззнаковое поле, и переиспользовать
+// знаковые чтение/запись ради него дешевле, чем держать вторую пару функций.
 static uint16_t read_u16(uint16_t addr) {
   return (uint16_t)(((uint16_t)EEPROM.read(addr) << 8) | EEPROM.read(addr + 1));
 }
@@ -26,18 +28,57 @@ static void write_u16(uint16_t addr, uint16_t value) {
   EEPROM.update(addr + 1, (uint8_t)((uint16_t)value & 0xFF));
 }
 
-static uint32_t read_u32(uint16_t addr) {
-  uint32_t value = 0;
-  for (uint8_t i = 0; i < 4; i++) {
-    value = (value << 8) | EEPROM.read(addr + i);
+// CRC-8 (poly 0x07) over the runtime counter. write_runtime() rewrites four
+// bytes one at a time, so losing power in the middle of a save leaves a value
+// built from two generations of counter, and on the display that reads as up to
+// four billion seconds. A checksum makes such a torn write detectable, and a
+// detected damage is cheaper than a wrong number: the counter restarts from
+// zero instead of reporting a runtime nobody ever accumulated.
+//
+// Computed bit by bit rather than from a table: a 256-byte lookup would be
+// exactly the flash the debug build no longer has.
+static uint8_t crc8(const uint8_t* data, uint8_t len) {
+  uint8_t crc = 0;
+  for (uint8_t i = 0; i < len; i++) {
+    crc ^= data[i];
+    for (uint8_t bit = 0; bit < 8; bit++)
+      crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
   }
-  return value;
+  return crc;
 }
 
-static void write_u32(uint16_t addr, uint32_t value) {
-  for (uint8_t i = 0; i < 4; i++) {
-    EEPROM.update(addr + i, (uint8_t)((value >> (8 * (3 - i))) & 0xFF));
-  }
+// Reads the counter together with its checksum. Returns false when the stored
+// pair does not match, leaving the output untouched.
+static bool read_runtime(uint32_t* out_value) {
+  uint8_t bytes[4];
+  for (uint8_t i = 0; i < 4; i++)
+    bytes[i] = EEPROM.read(EEPROM_RUNTIME_ADDR + i);
+
+  uint32_t value = 0;
+  for (uint8_t i = 0; i < 4; i++) value = (value << 8) | bytes[i];
+
+  // 0xFF is the state of a cell that has never been written, so this is where a
+  // board upgraded from a firmware without a checksum arrives. Its counter is a
+  // plain four-byte record written long ago, not a torn one, and it is adopted
+  // as it stands: discarding years of accumulated runtime over a missing
+  // checksum would be a worse defect than the one this guard exists to catch.
+  uint8_t stored_crc = EEPROM.read(EEPROM_CRC_ADDR);
+  if (stored_crc != 0xFF && stored_crc != crc8(bytes, 4)) return false;
+
+  *out_value = value;
+  return true;
+}
+
+// The checksum is written last: torn power in the middle of a save then breaks
+// the pair instead of leaving a self-consistent old value, which is what
+// read_runtime() is able to notice.
+static void write_runtime(uint32_t value) {
+  uint8_t bytes[4];
+  for (uint8_t i = 0; i < 4; i++)
+    bytes[i] = (uint8_t)((value >> (8 * (3 - i))) & 0xFF);
+
+  for (uint8_t i = 0; i < 4; i++) EEPROM.update(EEPROM_RUNTIME_ADDR + i, bytes[i]);
+  EEPROM.update(EEPROM_CRC_ADDR, crc8(bytes, 4));
 }
 
 void settings_init() {
@@ -46,7 +87,7 @@ void settings_init() {
     EEPROM.update(EEPROM_MAGIC_ADDR, EEPROM_MAGIC_VALUE);
     write_i16(EEPROM_TMIN_ADDR, T_OUT_DEFAULT_MIN);
     write_i16(EEPROM_TMAX_ADDR, T_OUT_DEFAULT_MAX);
-    write_u32(EEPROM_RUNTIME_ADDR, 0);
+    write_runtime(0);
     EEPROM.update(EEPROM_VALVE_ADDR, 0);
     write_u16(EEPROM_VPULSE_ADDR, VALVE_PULSE_DEFAULT_S);
     write_i16(EEPROM_TINMIN_ADDR, T_IN_MIN_DEFAULT);
@@ -54,7 +95,20 @@ void settings_init() {
 
   s_settings.t_min = read_i16(EEPROM_TMIN_ADDR);
   s_settings.t_max = read_i16(EEPROM_TMAX_ADDR);
-  s_settings.fan_runtime_s = read_u32(EEPROM_RUNTIME_ADDR);
+
+  // The runtime counter is the only value here that only ever grows, so a torn
+  // write cannot be spotted by a range check alone: half of an old and half of
+  // a new count still looks plausible. The checksum catches it, and a value
+  // beyond RUNTIME_MAX_H catches what a checksum cannot - damage that happened
+  // to leave a consistent pair. Either way the counter restarts: a wrong
+  // maintenance figure is worse than no figure at all.
+  uint32_t stored_runtime = 0;
+  if (!read_runtime(&stored_runtime) ||
+      stored_runtime > (uint32_t)RUNTIME_MAX_S) {
+    stored_runtime = 0;
+    write_runtime(0);
+  }
+  s_settings.fan_runtime_s = stored_runtime;
 
   // Привод заслонки — модуль необязательный: включается только явной настройкой,
   // поэтому любое значение, кроме единицы, трактуется как "привода нет".
@@ -137,7 +191,14 @@ void settings_commit() {
   write_i16(EEPROM_TMAX_ADDR, s_settings.t_max);
   EEPROM.update(EEPROM_VALVE_ADDR, s_settings.valve_enabled ? 1 : 0);
   write_u16(EEPROM_VPULSE_ADDR, s_settings.valve_pulse_s);
-  write_i16(EEPROM_TINMIN_ADDR, s_settings.t_in_min);
+
+  // The runtime goes out with the rest of the settings: leaving it to the
+  // hourly save alone loses up to an hour of counted work every time the board
+  // is powered off after a menu edit. EEPROM.update skips a byte whose value
+  // already matches, so a commit that did not change the counter costs nothing.
+  write_runtime(s_settings.fan_runtime_s);
+  s_runtime_dirty_s = 0;
+  s_last_runtime_save_ms = millis();
 }
 
 void settings_reset_runtime() {
@@ -147,7 +208,7 @@ void settings_reset_runtime() {
   // а следующий цикл работы начнёт отсчёт от старой точки.
   s_runtime_dirty_s = 0;
   s_last_runtime_save_ms = millis();
-  write_u32(EEPROM_RUNTIME_ADDR, 0);
+  write_runtime(0);
 }
 
 void settings_add_runtime(uint32_t seconds) {
@@ -158,7 +219,7 @@ void settings_add_runtime(uint32_t seconds) {
 
   unsigned long now = millis();
   if (s_runtime_dirty_s >= 3600 || (now - s_last_runtime_save_ms) >= RUNTIME_SAVE_PERIOD_MS) {
-    write_u32(EEPROM_RUNTIME_ADDR, s_settings.fan_runtime_s);
+    write_runtime(s_settings.fan_runtime_s);
     s_runtime_dirty_s = 0;
     s_last_runtime_save_ms = now;
   }
