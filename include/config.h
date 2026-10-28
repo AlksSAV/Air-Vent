@@ -178,6 +178,20 @@
 #define ABS_HYST_ON  2.0f
 #define ABS_HYST_OFF 0.5f
 
+// Number of readings the decision is averaged over. One raw DHT22 sample
+// carries +-0.5 degC and +-2 % RH, which is +-0.9 g/m3 on the difference -
+// wider than the ABS_HYST_ON minus ABS_HYST_OFF band, so a single noisy
+// sample could flip the relay. The median of three ignores a lone outlier
+// and costs only two extra polling periods before a state change.
+#define DIFF_FILTER_SAMPLES 3
+
+// Shortest time the fan stays engaged after it has been switched on, and the
+// shortest rest after it has been switched off. Without them a value drifting
+// around a threshold cycles the drive every SENSOR_PERIOD_MS, and every such
+// cycle is two full 12 s strokes of the motor.
+#define FAN_MIN_RUN_MS (10UL * 60UL * 1000UL)
+#define FAN_MIN_OFF_MS (5UL * 60UL * 1000UL)
+
 // Защита от конденсата. Приточный воздух безопасен, пока его точка росы
 // лежит ниже температуры самой холодной конструкции не менее чем на
 // DEW_MARGIN_C градусов. Пока DS18B20 поверхности исправен, берётся его
@@ -185,6 +199,16 @@
 // возвращается к аппроксимации "температура воздуха минус DEW_FALLBACK_C".
 #define DEW_MARGIN_C 1.0f
 #define DEW_FALLBACK_C 3.0f
+
+// Extra margin the fan runs on once it is already engaged. A single threshold
+// makes the relay chatter on sensor noise near it, and every flip costs two
+// full strokes of the drive, so stopping is allowed only a little closer to
+// the limit than starting.
+#define DEW_HYST_C 1.0f
+
+// Same for the outdoor temperature corridor: the set points are integers while
+// the reading is a float with +-0.5 degC of noise.
+#define T_CORRIDOR_HYST_C 1.0f
 
 // Ограничение непрерывной работы вентилятора и обязательный пауза после неё.
 #define FAN_RUN_MAX_MS (30UL * 60UL * 1000UL)

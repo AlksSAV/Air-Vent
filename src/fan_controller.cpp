@@ -20,8 +20,65 @@ static unsigned long s_credited_ms = 0;
 // Принудительный режим: флаг переключает только кнопка, таймера на него нет.
 static bool s_force = false;
 
+// Ring buffer of the humidity difference used for the decision. A single
+// DHT22 sample carries +-0.9 g/m3 of noise on the difference, which is wider
+// than the hysteresis band, so the relay could flip on one bad reading. The
+// median of the last DIFF_FILTER_SAMPLES values ignores a lone outlier.
+static float s_diff_samples[DIFF_FILTER_SAMPLES];
+static uint8_t s_diff_count = 0;
+static uint8_t s_diff_next = 0;
+
+// last_good_ms stamps of the reading already pushed, so one poll contributes
+// one sample even though fan_update() runs on every loop().
+static unsigned long s_push_out_ms = 0;
+static unsigned long s_push_in_ms = 0;
+
+static void push_diff(float value, unsigned long out_stamp, unsigned long in_stamp) {
+  if (out_stamp == s_push_out_ms && in_stamp == s_push_in_ms) return;
+  s_push_out_ms = out_stamp;
+  s_push_in_ms = in_stamp;
+
+  s_diff_samples[s_diff_next] = value;
+  s_diff_next = (uint8_t)((s_diff_next + 1) % DIFF_FILTER_SAMPLES);
+  if (s_diff_count < DIFF_FILTER_SAMPLES) s_diff_count++;
+}
+
+static float median_diff() {
+  if (s_diff_count == 0) return 0.0f;
+
+  float sorted[DIFF_FILTER_SAMPLES];
+  uint8_t n = s_diff_count;
+  for (uint8_t i = 0; i < n; i++) sorted[i] = s_diff_samples[i];
+
+  for (uint8_t i = 1; i < n; i++) {
+    float key = sorted[i];
+    int8_t j = (int8_t)i - 1;
+    while (j >= 0 && sorted[j] > key) {
+      sorted[j + 1] = sorted[j];
+      j--;
+    }
+    sorted[j + 1] = key;
+  }
+  return sorted[n / 2];
+}
+
 // Переключение реле: единственный place, где меняется состояние выхода.
+// Моменты смены состояния запоминаются: минимальное время работы и простоя
+// отсчитывается именно от них, а не от попыток вызова, которые повторяются
+// каждый проход loop().
+static bool s_relay_state = false;
+static unsigned long s_engaged_ms = 0;
+static unsigned long s_released_ms = 0;
+
 static void relay(bool on) {
+  if (on != s_relay_state) {
+    if (on) {
+      s_engaged_ms = millis();
+    } else {
+      s_released_ms = millis();
+    }
+    s_relay_state = on;
+  }
   digitalWrite(PIN_FAN, on ? FAN_RELAY_ACTIVE_LEVEL : !FAN_RELAY_ACTIVE_LEVEL);
 }
 
@@ -29,6 +86,21 @@ static void relay(bool on) {
 // поэтому наработка и её фиксация перед остановом для них общие.
 static bool relay_engaged(FanMode mode) {
   return mode == FAN_RUNNING || mode == FAN_FORCE;
+}
+
+// The shortest rest before a new start and the shortest run before a stop.
+// Every engagement of the relay costs the drive two full strokes, so a value
+// wandering around a threshold must not be able to cycle it: the limits below
+// cover the hysteresis band, the sensor noise and the temperature corridor
+// chatter at once.
+static bool relay_allowed_on(unsigned long now) {
+  if (s_relay_state) return true;
+  return (now - s_released_ms) >= FAN_MIN_OFF_MS;
+}
+
+static bool relay_allowed_off(unsigned long now) {
+  if (!s_relay_state) return true;
+  return (now - s_engaged_ms) >= FAN_MIN_RUN_MS;
 }
 
 // Переносит накопленные полные секунды работы в settings. Вызывается и во
@@ -57,6 +129,15 @@ void fan_init() {
   s_status.surface_wet = false;
   s_run_start_ms = 0;
   s_credited_ms = millis();
+  // The minimum rest is meant to stop cycling, not to delay commissioning,
+  // so the relay counts as released long enough ago to start right away.
+  s_relay_state = false;
+  s_released_ms = millis() - FAN_MIN_OFF_MS;
+  s_engaged_ms = 0;
+  s_diff_count = 0;
+  s_diff_next = 0;
+  s_push_out_ms = 0;
+  s_push_in_ms = 0;
 
   // У привода заслонки нет пружинного возврата, поэтому после подачи питания
   // положение захлопки неизвестно. Принудительно закрываем: концевик внутри
@@ -190,13 +271,25 @@ void fan_update(const SensorData& out, const SensorData& in,
 
   Settings st = settings_get();
 
-  // 4. Температурный коридор наружного воздуха.
-  if (out.temperature < (float)st.t_min) {
+  // The difference is pushed once per poll and the decision uses the median of
+  // the last DIFF_FILTER_SAMPLES values. A raw sample is noisier than the
+  // hysteresis band, so one bad reading must not flip the relay.
+  push_diff(in.absolute_humidity - out.absolute_humidity, out.last_good_ms,
+            in.last_good_ms);
+  float diff = median_diff();
+  bool running = (s_status.mode == FAN_RUNNING);
+
+  // 4. Температурный коридор наружного воздуха. Уставки целочисленные, а
+  //    показание - float с шумом +-0.5 град, поэтому выход из коридора
+  //    останавливает вентилятор по порогу с запасом: иначе на границе реле
+  //    дребещет и каждый переход стоит двух полных ходов привода.
+  float hyst = running ? T_CORRIDOR_HYST_C : 0.0f;
+  if (out.temperature < (float)st.t_min - hyst) {
     stop(BLOCK_TEMP_LOW);
     relay(false);
     return;
   }
-  if (out.temperature > (float)st.t_max) {
+  if (out.temperature > (float)st.t_max + hyst) {
     stop(BLOCK_TEMP_HIGH);
     relay(false);
     return;
@@ -207,15 +300,14 @@ void fan_update(const SensorData& out, const SensorData& in,
   //    поверхности исправен, берается его реальное показание; иначе
   //    конструкции аппроксимируются внутренним воздухом минус запас.
   float dew_out = dew_point(out.temperature, out.humidity);
-  if (dew_out > t_crit - DEW_MARGIN_C) {
+  float dew_limit = t_crit - DEW_MARGIN_C + (running ? DEW_HYST_C : 0.0f);
+  if (dew_out > dew_limit) {
     stop(BLOCK_DEW);
     relay(false);
     return;
   }
 
   // 6. Гистерезис по абсолютной влажности.
-  float diff = in.absolute_humidity - out.absolute_humidity;
-
   if (s_status.mode == FAN_RUNNING) {
     // Valve position can change without the controller's knowledge: the
     // operator switched VALVE in the settings menu and the flap went home.
@@ -229,16 +321,18 @@ void fan_update(const SensorData& out, const SensorData& in,
       relay(false);
       return;
     }
-    // Выключаем, только когда преимущество наружного воздуха почти иссякло:
-    // нижний порог ниже верхнего и не даёт реле циклировать на месте.
-    if (diff < ABS_HYST_OFF) {
-      stop(BLOCK_DRY);
-      relay(false);
-      return;
-    }
     // Лимит непрерывной работы: защита от переохлаждения помещения.
     if ((now - s_run_start_ms) >= FAN_RUN_MAX_MS) {
       stop(BLOCK_COOLDOWN);
+      relay(false);
+      return;
+    }
+    // Выключаем, только когда преимущество наружного воздуха почти иссякло:
+    // нижний порог ниже верхнего и не даёт реле циклировать на месте.
+    // Минимальное время работы держит привод в покое: каждый пуск стоит двух
+    // полных ходов заслонки, а шуму достаточно перескочить через узкую полосу.
+    if (diff < ABS_HYST_OFF && relay_allowed_off(now)) {
+      stop(BLOCK_DRY);
       relay(false);
       return;
     }
@@ -248,7 +342,7 @@ void fan_update(const SensorData& out, const SensorData& in,
 
   // IDLE: включаем при достаточной разнице. Значения между порогами
   // оставляют контроллер в покое — это и есть зона нечувствительности.
-  if (diff > ABS_HYST_ON) {
+  if (diff > ABS_HYST_ON && relay_allowed_on(now)) {
     start(now);
     relay(false);
     return;
