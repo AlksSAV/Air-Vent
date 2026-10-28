@@ -70,7 +70,9 @@ void setup() {
   // что занимает sensors_init().
   display_init(lcd);
 
+#ifdef TELEMETRY
   Serial.begin(115200);
+#endif
 
   sensors_init();
   settings_init();
@@ -103,8 +105,6 @@ void setup() {
 }
 
 void loop() {
-  unsigned long now = millis();
-
   buttons_poll();
 
   // Любое нажатие зажигает подсветку и продлевает её таймаут: погасший экран
@@ -145,10 +145,15 @@ void loop() {
     display_show(lcd, out, in, floor, baro, fan, st);
   }
 
+#ifdef TELEMETRY
   // Телеметрия для отладки: одно короткое сообщение раз в 5 с.
+  // В прошивке без TELEMETRY этот блок вырезан целиком: он стоит about
+  // 1.7 КБ flash (Print::print(float) тянет за собой ~1.5 КБ) и, что
+  // важнее, печатает в том же проходе loop(), где DHT держит прерывания
+  // выключенными до 42 мс - на 115200 это потеря части строки.
   static unsigned long s_telemetry_ms = 0;
-  if ((now - s_telemetry_ms) >= SERIAL_LOG_PERIOD_MS) {
-    s_telemetry_ms = now;
+  if ((millis() - s_telemetry_ms) >= SERIAL_LOG_PERIOD_MS) {
+    s_telemetry_ms = millis();
     Serial.print(F("OUT "));
     Serial.print(out.temperature, 1);
     Serial.print(F("C "));
@@ -195,6 +200,7 @@ void loop() {
     Serial.print(F(" V="));
     Serial.println((int)valve_position());
   }
+#endif
 
   // Last statement of loop(): if any call above ever hangs, the watchdog
   // resets the board instead of leaving the 230 V load in its last state.
