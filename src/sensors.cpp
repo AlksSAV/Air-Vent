@@ -64,6 +64,11 @@ void sensors_init() {
   // микросхему повторяется в update_baro().
   s_baro_ready = baro.begin(BARO_I2C_ADDRESS);
 
+  // Default Wire timeout is disabled (twi_timeout_us = 0): a stuck SDA line
+  // would spin twi_writeTo() forever, loop() would stop and the fan relay
+  // would stay engaged. With reset_with_timeout the bus recovers by itself.
+  Wire.setWireTimeout(I2C_TIMEOUT_US, true);
+
   floor_sensor.begin();
   // Без этого requestTemperatures() внутри себя дожидается конца конверсии и
   // блокирует loop() на 750 мс.

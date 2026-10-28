@@ -52,6 +52,19 @@ static LiquidCrystal lcd(PIN_LCD_RS, PIN_LCD_EN, PIN_LCD_D4, PIN_LCD_D5,
                          PIN_LCD_D6, PIN_LCD_D7);
 
 void setup() {
+  // Power pins first. Until now D3/D11/D12 are high-impedance inputs: the
+  // GND-trigger relay modules on D11/D12 are usually saved by the optocoupler
+  // pull-up, but the HIGH-active SSR on D3 must not rely on that — a pick-up
+  // noise on a floating input can open it.
+  pinMode(PIN_FAN, OUTPUT);
+  digitalWrite(PIN_FAN, !FAN_RELAY_ACTIVE_LEVEL);
+
+  pinMode(PIN_VALVE_OPEN, OUTPUT);
+  digitalWrite(PIN_VALVE_OPEN, !VALVE_RELAY_ACTIVE_LEVEL);
+
+  pinMode(PIN_VALVE_CLOSE, OUTPUT);
+  digitalWrite(PIN_VALVE_CLOSE, !VALVE_RELAY_ACTIVE_LEVEL);
+
   // Дисплей инициализируется первым: пока поднимаются датчики, LCD уже
   // показывает заставку. Иначе экран остаётся тёмным и с мусором всё время,
   // что занимает sensors_init().
@@ -77,6 +90,16 @@ void setup() {
   }
 
   display_boot_done();
+
+  // Watchdog: enabled at the end because setup() blocks intentionally
+  // (LCD init, DHT warm-up, splash up to 5 s). A 2 s limit would be violated
+  // before loop() even starts. A hang here (stuck I2C, library bug) would
+  // leave the fan relay permanently on.
+  //
+  // Note: the optimized Optiboot bootloader jumps straight to the app on
+  // watchdog reset without delay, so a reset-loop is impossible; the window
+  // where power pins are floating is limited to ~130 ms during init.
+  wdt_enable(WATCHDOG_TIMEOUT_MS);
 }
 
 void loop() {
@@ -172,4 +195,8 @@ void loop() {
     Serial.print(F(" V="));
     Serial.println((int)valve_position());
   }
+
+  // Last statement of loop(): if any call above ever hangs, the watchdog
+  // resets the board instead of leaving the 230 V load in its last state.
+  wdt_reset();
 }

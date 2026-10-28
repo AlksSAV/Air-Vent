@@ -32,6 +32,12 @@ ValvePos valve_position();
 // контроллер не знает, в каком положении он оказался после отключения питания.
 void valve_home();
 
+// Forgets the derived position: the next valve_open()/valve_close() runs a
+// full stroke again and valve_position() reports MOVING until it finishes.
+// Required whenever the assumption "the last pulse ended in a limit switch"
+// no longer holds, i.e. when the valve module is switched in the menu.
+void valve_invalidate_position();
+
 // Открыть заслонку (импульс на реле, концевик сам разомкнёт цепь).
 void valve_open();
 

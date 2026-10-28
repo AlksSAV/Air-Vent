@@ -214,6 +214,18 @@ void fan_update(const SensorData& out, const SensorData& in,
   float diff = in.absolute_humidity - out.absolute_humidity;
 
   if (s_status.mode == FAN_RUNNING) {
+    // Valve position can change without the controller's knowledge: the
+    // operator switched VALVE in the settings menu and the flap went home.
+    // Running against a closed channel is exactly what the opening phase
+    // exists to prevent, so re-open it instead of pushing air into a
+    // closed duct.
+    if (valve_position() != VALVE_POS_OPEN) {
+      valve_open();
+      s_status.mode = FAN_OPENING;
+      s_status.block = BLOCK_VALVE;
+      relay(false);
+      return;
+    }
     // Выключаем, только когда преимущество наружного воздуха почти иссякло:
     // нижний порог ниже верхнего и не даёт реле циклировать на месте.
     if (diff < ABS_HYST_OFF) {

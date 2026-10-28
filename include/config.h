@@ -2,6 +2,7 @@
 #define CONFIG_H
 
 #include <Arduino.h>
+#include <avr/wdt.h>  // WDTO_2S for WATCHDOG_TIMEOUT_MS
 
 // ---------------------------------------------------------------------------
 // Пины. Arduino Uno + LCD Keypad Shield.
@@ -140,6 +141,18 @@
 // погода меняет давление на единицы гПа за часы; скачок в десятки — признак
 // сбоя шины I2C, а не погоды.
 #define BARO_MAX_JUMP_HPA 20.0f
+
+// I2C bus timeout, microseconds. The Wire core ships with the timeout
+// disabled (twi_timeout_us = 0), so a stuck SDA line sends twi_writeTo() into
+// an endless loop: loop() never returns and the fan relay stays latched on.
+// 25 ms is the SMBus limit for clock stretching; after a timeout the core
+// resets the TWI hardware by itself.
+#define I2C_TIMEOUT_US 25000
+
+// Watchdog period. The controller switches a 230 V load unattended, so a hang
+// is not acceptable. 2 s is far above one loop() pass and short enough to stop
+// a runaway fan well before the run limit becomes relevant.
+#define WATCHDOG_TIMEOUT_MS WDTO_2S
 
 // ---------------------------------------------------------------------------
 // Алгоритм осушения

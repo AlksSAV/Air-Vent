@@ -4,6 +4,7 @@
 #include "display.h"
 #include "fan_controller.h"
 #include "settings.h"
+#include "valve.h"
 
 // Две страницы: главная с тремя разделами и разделы с параметрами. Глубину
 // больше не делаем: на 16 символах без индикатора пути третий уровень
@@ -71,8 +72,20 @@ bool menu_update() {
                                 : settings_adjust_t_max(step);
     } else if (s_page == PAGE_VALVE) {
       // Привод — переключатель, шаг у него всегда один.
-      changed = (s_cursor == 0) ? settings_toggle_valve()
-                                : settings_adjust_valve_pulse(step);
+      if (s_cursor == 0) {
+        changed = settings_toggle_valve();
+        if (changed) {
+          // The flap position derived from past pulses means nothing now: the
+          // module was just switched. Forget it and let the controller act on
+          // the safe reading "unknown == closed" - it stops the fan out of an
+          // unverified channel and re-establishes the position with a single
+          // full stroke. Calling valve_home() here instead would pulse the
+          // motor closed while the RUNNING branch sends it open again.
+          valve_invalidate_position();
+        }
+      } else {
+        changed = settings_adjust_valve_pulse(step);
+      }
     }
     if (changed) {
       s_idle_since_ms = now;
