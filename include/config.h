@@ -102,6 +102,13 @@
 // Сколько подряд неудачных чтений до перевода датчика в состояние ошибки.
 #define SENSOR_MAX_ERRORS 3
 
+// Lower bound of a plausible humidity reading. 0 % is the signature of a
+// broken DHT22 (open signal line, dried-out sensor, pickup from the SSR), not
+// a weather condition: in a temperate climate outdoor air never dries that far.
+// Such a reading must be rejected, otherwise absolute_humidity() reports 0 and
+// the fan starts for a full 30-minute cycle on data that does not exist.
+#define RH_MIN_PLAUSIBLE 5.0f
+
 // Данные считаются недействительными, если датчик не обновлялся дольше этого
 // времени. Вентилятор при этом принудительно выключается.
 #define DATA_STALE_MS (10UL * 60UL * 1000UL)

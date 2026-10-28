@@ -23,7 +23,11 @@ float absolute_humidity(float temp_c, float rel_hum_pct) {
 }
 
 float dew_point(float temp_c, float rel_hum_pct) {
-  if (rel_hum_pct <= 0.0f || rel_hum_pct > 100.0f) return -273.15f;
+  // Returning -273.15 here was fail-open: the condensate guard compares
+  // dew_out against the coldest surface, and the coldest possible dew point
+  // passes every check. A rejected humidity must block ventilation instead,
+  // so hand back a value no surface can be warmer than.
+  if (rel_hum_pct <= 0.0f || rel_hum_pct > 100.0f) return 1000.0f;
 
   float gamma = logf(rel_hum_pct / 100.0f) + MAGNUS_A * temp_c / (MAGNUS_B + temp_c);
   return MAGNUS_B * gamma / (MAGNUS_A - gamma);

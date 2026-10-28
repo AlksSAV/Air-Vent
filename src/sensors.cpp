@@ -97,7 +97,7 @@ static void read_sensor(DHT& dht, SensorData& data, uint8_t& errors) {
   float temp = ok ? dht.readTemperature() : NAN;
   float hum = ok ? dht.readHumidity() : NAN;
 
-  bool plausible = isfinite(temp) && isfinite(hum) && hum >= 0.0f &&
+  bool plausible = isfinite(temp) && isfinite(hum) && hum >= RH_MIN_PLAUSIBLE &&
                    hum <= 100.0f && temp >= -40.0f && temp <= 60.0f;
 
   if (plausible) {
