@@ -198,7 +198,6 @@ void display_show(LiquidCrystal& lcd, const SensorData& out,
       // "\xC2\xB0" не годится: HD44780 берёт знак град из собственного CGROM
       // по байту 0xDF (223).
       fmt_1dp(v1, sizeof(v1), out.temperature, false);
-      fmt_1dp(v2, sizeof(v2), in.temperature, false);
       snprintf(buf, sizeof(buf), "OUT%5s\xDF" "C %c %2ld%%", v1, CG_PHI,
                (long)out.humidity);
       draw_line(lcd, 0, buf);

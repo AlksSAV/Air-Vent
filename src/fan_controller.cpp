@@ -186,7 +186,6 @@ static void start(unsigned long now) {
   s_status.mode = FAN_OPENING;
   s_status.block = BLOCK_VALVE;
   s_run_start_ms = now;
-  s_phase_start_ms = now;
 }
 
 void fan_update(const SensorData& out, const SensorData& in,
