@@ -17,7 +17,7 @@
 #define PIN_LCD_D6  6
 #define PIN_LCD_D7  7
 
-// Пять клавищ щита — резистивный делитель на одной аналоговой линии.
+// Пять клавиш щита — резистивный делитель на одной аналоговой линии.
 #define PIN_BUTTONS A0
 
 // Датчики DHT22.
@@ -251,7 +251,7 @@
 // flip at the threshold and every flip costs two full strokes of the drive.
 #define T_IN_MIN_HYST_C 1.0f
 
-// Ограничение непрерывной работы вентилятора и обязательный пауза после неё.
+// Ограничение непрерывной работы вентилятора и обязательная пауза после неё.
 #define FAN_RUN_MAX_MS (30UL * 60UL * 1000UL)
 #define FAN_PAUSE_MS   (15UL * 60UL * 1000UL)
 
