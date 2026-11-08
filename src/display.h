@@ -6,7 +6,6 @@
 #include "config.h"
 #include "sensors.h"
 #include "fan_controller.h"
-#include "settings.h"
 
 // Экран переключается сам по таймеру либо клавишей Right.
 enum Screen : uint8_t {
@@ -15,7 +14,7 @@ enum Screen : uint8_t {
   SCREEN_SURFACE,      // температура критической поверхности и роса на ней
   SCREEN_BARO,         // влагосодержание (x)
   SCREEN_DELTA,        // dx и dT
-  SCREEN_STATUS,       // состояние вентилятора, наработка, уставки
+  SCREEN_STATUS,       // состояние вентилятора, наработка
   SCREENS_COUNT
 };
 
@@ -28,7 +27,7 @@ void display_boot_done();
 // Обновляет обычный экран. Внутри держит таймер периода и текущий экран.
 void display_show(LiquidCrystal& lcd, const SensorData& out,
                   const SensorData& in, const SurfaceData& floor,
-                  const BaroData& baro, FanStatus fan, const Settings& st);
+                  const BaroData& baro, FanStatus fan);
 
 // Переключить экран вручную.
 void display_next_screen();

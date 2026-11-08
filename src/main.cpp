@@ -136,13 +136,12 @@ void loop() {
   valve_update();
   fan_update(out, in, floor);
 
-  Settings st = settings_get();
   FanStatus fan = fan_status();
 
   if (s_mode == UI_MENU) {
     menu_draw(lcd);
   } else {
-    display_show(lcd, out, in, floor, baro, fan, st);
+    display_show(lcd, out, in, floor, baro, fan);
   }
 
 #ifdef TELEMETRY

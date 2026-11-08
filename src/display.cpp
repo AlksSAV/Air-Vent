@@ -158,7 +158,7 @@ void display_invalidate() { s_force_redraw = true; }
 
 void display_show(LiquidCrystal& lcd, const SensorData& out,
                   const SensorData& in, const SurfaceData& floor,
-                  const BaroData& baro, FanStatus fan, const Settings& st) {
+                  const BaroData& baro, FanStatus fan) {
   unsigned long now = millis();
   update_backlight(now);
 
