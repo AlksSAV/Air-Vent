@@ -1,12 +1,11 @@
 #include <Arduino.h>
 #include <OneWire.h>
 #include <Wire.h>
+#include "config.h"
 
 // Диагностика стенда: подтяжка линии 1-Wire, поиск устройств на шине, чтение
 // температуры и скан I2C. Живёт в отдельном env (uno_diag) и в основную
 // прошивку не попадает.
-
-static const uint8_t PIN_FLOOR = A3;
 
 static void print_hex8(uint8_t v) {
   if (v < 16) Serial.print('0');
