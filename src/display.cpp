@@ -136,7 +136,7 @@ void display_wake() {
   s_last_activity_ms = millis();
   if (!s_asleep) return;
   s_asleep = false;
-  digitalWrite(10, HIGH);
+  digitalWrite(PIN_LCD_BACKLIGHT, HIGH);
   s_force_redraw = true;
 }
 
@@ -151,7 +151,7 @@ static void update_backlight(unsigned long now) {
   if (s_asleep) return;
   if ((now - s_last_activity_ms) < DISPLAY_BACKLIGHT_TIMEOUT_MS) return;
   s_asleep = true;
-  digitalWrite(10, LOW);
+  digitalWrite(PIN_LCD_BACKLIGHT, LOW);
 }
 
 void display_invalidate() { s_force_redraw = true; }
