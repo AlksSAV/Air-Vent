@@ -152,7 +152,7 @@
 - [ ] `display.cpp:258`: комментарий «CGRAM-слот 7», а `CG_DELTA = 1`
 - [ ] `valve.cpp`: `valve_present()` копирует 12-байтный struct ради одного bool несколько раз
       за цикл — добавить `settings_valve_enabled()` / `settings_valve_pulse()`
-- [ ] `display.cpp:83`: `pinMode(10, OUTPUT)` — магическое число, нужен `PIN_LCD_BACKLIGHT`
+- [x] `display.cpp`: `pinMode(10, OUTPUT)` — магическое число, нужен `PIN_LCD_BACKLIGHT`
 - [ ] `config.h:26-27`: «D3 выбран потому, что D2 занят миганием TX» — TX это D1, а D2 свободен,
       что написано двумя строками выше
 - [ ] `diag_main.cpp:9`: свой `PIN_FLOOR = A3`, дублирует `config.h`

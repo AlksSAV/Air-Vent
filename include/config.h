@@ -17,6 +17,9 @@
 #define PIN_LCD_D6  6
 #define PIN_LCD_D7  7
 
+// Подсветка LCD Keypad Shield.
+#define PIN_LCD_BACKLIGHT  10
+
 // Пять клавиш щита — резистивный делитель на одной аналоговой линии.
 #define PIN_BUTTONS A0
 

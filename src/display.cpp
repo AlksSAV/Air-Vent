@@ -80,10 +80,10 @@ static byte CHAR_PHI[8] = {0x04, 0x0E, 0x15, 0x15, 0x15, 0x0E, 0x04, 0x00};
 #define CG_PHI 2
 
 void display_init(LiquidCrystal& lcd) {
-  // Подсветка LCD Keypad Shield сидит на D10: без явного HIGH экран рабочий,
+  // Подсветка LCD Keypad Shield сидит на PIN_LCD_BACKLIGHT: без явного HIGH экран рабочий,
   // но тёмный.
-  pinMode(10, OUTPUT);
-  digitalWrite(10, HIGH);
+  pinMode(PIN_LCD_BACKLIGHT, OUTPUT);
+  digitalWrite(PIN_LCD_BACKLIGHT, HIGH);
 
   lcd.begin(16, 2);
 
